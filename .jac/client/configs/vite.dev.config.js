@@ -7,23 +7,46 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const buildDir = path.resolve(__dirname, "..");
 const projectRoot = path.resolve(__dirname, "../../..");
 import jacFastRefresh from "./jac-fast-refresh.js";
-import jacClientEvents, { recordClientEvent } from "./jac-client-events.js";
+import jacDevStatus, { reportClientLoad } from "./jac-dev-status.js";
 
-// Vite plugin: hand the browser's RAW error payload to the Jac process.
-// No path rewriting, no file derivation, no terminal rendering here: the Jac
-// side owns resolving a compiled coordinate back to a .jac location, and it
-// is the only place a client failure is printed.
+// Vite plugin: forward client-side runtime errors to the terminal and browser overlay
 function jacErrorReporter() {
   const seen = new Map();
   return {
     name: "jac-error-reporter",
     configureServer(server) {
       server.ws.on("jac:client-error", (data) => {
-        const key = String(data.type) + ":" + String(data.message);
+        const key = data.type + ":" + data.message;
         const now = Date.now();
         if (seen.get(key) > now - 2000) return;
         seen.set(key, now);
-        try { recordClientEvent(data); } catch (e) {}
+        let loc = "";
+        if (data.source) {
+          try {
+            var p = new URL(data.source).pathname.slice(1)
+              .replace("compiled/", "").replace(".vite/deps/", "");
+            if (p.endsWith(".js")) p = p.slice(0, -3) + ".jac";
+            loc = " (" + p;
+            if (data.line) loc += ":" + data.line;
+            if (data.column) loc += ":" + data.column;
+            loc += ")";
+          } catch(e) {}
+        }
+        // Timestamped: the log is append-only, so a fixed error otherwise reads as live.
+        console.error("[" + new Date(now).toISOString() + "] Client error: " + data.type + ": " + data.message + loc);
+        if (data.phase === "load") {
+          try { reportClientLoad(data); } catch (e) {}
+          server.ws.send({
+            type: "error",
+            err: {
+              message: data.message,
+              stack: data.stack || "",
+              id: data.source || "compiled/_entry.js",
+              frame: "",
+              plugin: "jac-error-reporter",
+            },
+          });
+        }
       });
     },
   };
@@ -75,14 +98,14 @@ function jacForceReload() {
   };
 }
 
-// Vite plugin: surface Jac diagnostics via Vite's native error overlay.
-// The jac dev server owns .jac-status.json; the file existing means broken
-// (show the rendered diagnostic), removed means recovered (reload).
+// Vite plugin: surface Jac build errors via Vite's native error overlay.
+// The jac dev server mirrors build health to .jac-build-error.json; the file
+// existing means broken (show overlay), removed means recovered (reload).
 function jacBuildErrorOverlay() {
-  const statusFile = path.resolve(buildDir, ".jac-status.json");
+  const statusFile = path.resolve(buildDir, ".jac-build-error.json");
   let lastRaw = null;
   const read = () => {
-    try { return fs.readFileSync(statusFile, "utf-8"); } catch (e) { return ""; }
+    try { return fs.readFileSync(statusFile, "utf-8"); } catch (e) { return ; }
   };
   return {
     name: "jac-build-error-overlay",
@@ -102,25 +125,15 @@ function jacBuildErrorOverlay() {
           server.ws.send({ type: "full-reload", path: "*", jacTriggered: true });
           return;
         }
-        // The Jac process already rendered the diagnostic; the overlay shows the
-        // headline as the message and the rendered block (location, snippet,
-        // help) as the frame.
-        let file = "", message = raw, frame = "", stack = "", loc = null;
+        let file = "", message = raw;
         try {
           const data = JSON.parse(raw);
-          const all = data.diagnostics || [];
-          const diag = all[0] || {};
-          const more = all.length > 1 ? " (+" + (all.length - 1) + " more)" : "";
-          file = diag.file || "";
-          message = (diag.code ? diag.code + ": " : "")
-            + (diag.message || "Jac build error") + more;
-          frame = diag.rendered || "";
-          stack = diag.stack || "";
-          if (diag.line) loc = { file: file, line: diag.line, column: diag.column || 0 };
+          file = data.file || "";
+          message = data.message || "Jac build error";
         } catch (e) {}
         server.ws.send({
           type: "error",
-          err: { message: message, stack: stack, id: file, loc: loc, frame: frame, plugin: "jac" },
+          err: { message: message, stack: "", id: file, plugin: "jac" },
         });
       };
       try { server.watcher.add(statusFile); } catch (e) {}
@@ -177,7 +190,7 @@ export default defineConfig({
     jacErrorReporter(),
     jacPortReporter(),
     jacBuildErrorOverlay(),
-    jacClientEvents(),
+    jacDevStatus(),
     jacForceReload(),
     jacFastRefresh(),
     react()
@@ -208,10 +221,6 @@ export default defineConfig({
       ],
     },
     proxy: {
-      "/api": {
-        target: "http://localhost:8001",
-        changeOrigin: true,
-      },
       "/walker": {
         target: "http://localhost:8001",
         changeOrigin: true,
@@ -240,10 +249,6 @@ export default defineConfig({
         target: "http://localhost:8001",
         changeOrigin: true,
       },
-      "/healthz": {
-        target: "http://localhost:8001",
-        changeOrigin: true,
-      },
       "/admin": {
         target: "http://localhost:8001",
         changeOrigin: true,
@@ -256,6 +261,7 @@ export default defineConfig({
         target: "http://localhost:8001",
         changeOrigin: true,
       },
+      // Backend serves project assets/ dir in dev; Vite owns /assets/* only at build time.
       "/assets": {
         target: "http://localhost:8001",
         changeOrigin: true,
@@ -266,7 +272,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@jac/runtime": path.resolve(buildDir, "compiled/client_runtime.js"),
-      "@jac/prelude": path.resolve(buildDir, "compiled/jac_prelude.js"),
       "@jac/desktop": path.resolve(buildDir, "compiled/desktop_api.js"),
       "@jac/mobui": path.resolve(buildDir, "compiled/client_mobui.js"),
       "@jac-client/assets": path.resolve(buildDir, "compiled/assets"),
