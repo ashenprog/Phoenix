@@ -3,6 +3,7 @@ import from models { ModelMode, Scenario }
 import from recovery {
     classify_failure,
     execute_recovery,
+    run_reliability_benchmark,
     select_strategy,
 }
 import from tools {
@@ -277,4 +278,29 @@ test "ai deterministic report and recovery explanation" {
     assert explained["model_mode"] == ModelMode.DETERMINISTIC_FALLBACK;
     assert explained["model_mode"] != ModelMode.LIVE_MODEL;
     assert "FALLBACK_TOOL" in explained["text"];
+}
+
+test "reliability benchmark is deterministic and honest" {
+    first = run_reliability_benchmark();
+    second = run_reliability_benchmark();
+    keys = [
+        "total_runs",
+        "successful_reports",
+        "failures_detected",
+        "recoveries_verified",
+        "recovery_attempts",
+        "repeated_tool_calls",
+        "baseline_completed",
+        "phoenix_completed",
+    ];
+    for key in keys {
+        assert first[key] == second[key];
+    }
+    assert first["total_runs"] == 10;
+    assert first["phoenix_completed"] > first["baseline_completed"];
+    assert len(first["limitations"]) > 0;
+    assert first["elapsed_ms"] >= 0;
+    perm = first["permission_denied_completed"];
+    assert not perm["baseline"] or not perm["phoenix"];
+    assert first["baseline_vs_phoenix"]["phoenix_completed"] == first["phoenix_completed"];
 }

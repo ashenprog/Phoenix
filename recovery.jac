@@ -1,8 +1,13 @@
 """PHOENIX recovery policy — classify, select, execute (bounded)."""
 
+import time;
+
+import from ai { compose_report }
 import from models { Scenario }
 import from tools {
+    check_report,
     extract_key_points,
+    reset_fault_state,
     retrieve_backup,
     retrieve_primary,
 }
@@ -206,5 +211,267 @@ def execute_recovery(
         "action_result": action_result,
         "category": category,
         "attempt_count": attempt_count,
+    };
+}
+
+glob _BENCHMARK_SCENARIOS: list[Scenario] = [
+    Scenario.NORMAL,
+    Scenario.PRIMARY_503,
+    Scenario.TEMP_TIMEOUT,
+    Scenario.INVALID_OUTPUT,
+    Scenario.PERMISSION_DENIED,
+];
+
+glob _BENCHMARK_LIMITATIONS: list[str] = [
+    "Controlled fixture faults only; not production reliability evidence.",
+    "Tiny deterministic sample (five scenarios); no statistical significance.",
+    "No concurrency or load stress testing.",
+];
+
+def _benchmark_findings(records: list[dict[str, any]]) -> list[str] {
+    out: list[str] = [];
+    for rec in records {
+        excerpt = str(rec.get("excerpt", "")).strip();
+        if len(excerpt) > 0 {
+            out.append(excerpt);
+        }
+    }
+    if len(out) == 0 {
+        out = ["[FIXTURE] benchmark finding."];
+    }
+    return out;
+}
+
+def _benchmark_source_ids(records: list[dict[str, any]]) -> list[str] {
+    ids: list[str] = [];
+    for rec in records {
+        sid = rec.get("source_id", "");
+        if isinstance(sid, str) and len(sid) > 0 and sid not in ids {
+            ids.append(sid);
+        }
+    }
+    return ids;
+}
+
+def _benchmark_report_ok(run_id: str, records: list[dict[str, any]]) -> bool {
+    composed = compose_report(
+        "benchmark fixture task",
+        _benchmark_findings(records),
+        _benchmark_source_ids(records),
+    );
+    report_doc = composed["report"];
+    return check_report(run_id, Scenario.NORMAL, report_doc)["ok"];
+}
+
+def _benchmark_first_attempt(
+    run_id: str,
+    scenario: Scenario,
+) -> dict[str, any] {
+    tool_calls = 0;
+    records: list[dict[str, any]] = [];
+    if scenario == Scenario.INVALID_OUTPUT {
+        setup = retrieve_primary(f"{run_id}-setup", Scenario.NORMAL);
+        tool_calls += 1;
+        if setup.get("ok") {
+            maybe = setup["data"].get("records", []);
+            if isinstance(maybe, list) {
+                records = maybe;
+            }
+        }
+        first = extract_key_points(run_id, scenario, records);
+        tool_calls += 1;
+        return {
+            "tool_result": first,
+            "tool_calls": tool_calls,
+            "records": records,
+        };
+    }
+    first = retrieve_primary(run_id, scenario);
+    tool_calls = 1;
+    if first.get("ok") {
+        maybe = first["data"].get("records", []);
+        if isinstance(maybe, list) {
+            records = maybe;
+        }
+    }
+    return {
+        "tool_result": first,
+        "tool_calls": tool_calls,
+        "records": records,
+    };
+}
+
+def _benchmark_needs_recovery(tool_result: dict[str, any]) -> bool {
+    if not tool_result.get("ok") {
+        return True;
+    }
+    return classify_failure(tool_result) == "INVALID_OUTPUT";
+}
+
+def _records_after_recovery(
+    recovery_out: dict[str, any],
+    prior_records: list[dict[str, any]],
+) -> list[dict[str, any]] {
+    action = recovery_out.get("action_result", {});
+    if isinstance(action, dict) and action.get("ok") {
+        data = action.get("data", {});
+        if isinstance(data, dict) {
+            recs = data.get("records", []);
+            if isinstance(recs, list) and len(recs) > 0 {
+                return recs;
+            }
+        }
+    }
+    return prior_records;
+}
+
+def _baseline_one(run_id: str, scenario: Scenario) -> dict[str, any] {
+    reset_fault_state(run_id);
+    attempt = _benchmark_first_attempt(run_id, scenario);
+    tool_calls = int(attempt["tool_calls"]);
+    records = attempt["records"];
+    tool_result = attempt["tool_result"];
+    failures = 0;
+    if _benchmark_needs_recovery(tool_result) {
+        failures = 1;
+        return {
+            "completed": False,
+            "failures": failures,
+            "tool_calls": tool_calls,
+            "repeated_tool_calls": max(0, tool_calls - 1),
+        };
+    }
+    completed = _benchmark_report_ok(run_id, records);
+    return {
+        "completed": completed,
+        "failures": failures,
+        "tool_calls": tool_calls,
+        "repeated_tool_calls": max(0, tool_calls - 1),
+    };
+}
+
+def _phoenix_one(run_id: str, scenario: Scenario) -> dict[str, any] {
+    reset_fault_state(run_id);
+    attempt = _benchmark_first_attempt(run_id, scenario);
+    tool_calls = int(attempt["tool_calls"]);
+    records = attempt["records"];
+    tool_result = attempt["tool_result"];
+    failures = 0;
+    recoveries_verified = 0;
+    recovery_attempts = 0;
+    if not _benchmark_needs_recovery(tool_result) {
+        completed = _benchmark_report_ok(run_id, records);
+        return {
+            "completed": completed,
+            "failures": failures,
+            "recoveries_verified": recoveries_verified,
+            "recovery_attempts": recovery_attempts,
+            "tool_calls": tool_calls,
+            "repeated_tool_calls": max(0, tool_calls - 1),
+        };
+    }
+    failures = 1;
+    category = classify_failure(tool_result);
+    pick = select_strategy(
+        category,
+        {"retries_this_step": 0, "recoveries_this_run": 0},
+    );
+    recovery_attempts = 1;
+    recovery_out = execute_recovery(
+        {
+            "run_id": run_id,
+            "scenario": scenario,
+            "records": records,
+            "category": category,
+            "reason": pick["reason"],
+            "requires_approval": pick["requires_approval"],
+            "attempt_count": 1,
+        },
+        pick["strategy"],
+    );
+    if recovery_out.get("executed") {
+        tool_calls += 1;
+    }
+    if recovery_out.get("verification_status") == "VERIFIED" {
+        recoveries_verified = 1;
+        records = _records_after_recovery(recovery_out, records);
+    } else {
+        return {
+            "completed": False,
+            "failures": failures,
+            "recoveries_verified": recoveries_verified,
+            "recovery_attempts": recovery_attempts,
+            "tool_calls": tool_calls,
+            "repeated_tool_calls": max(0, tool_calls - 1),
+        };
+    }
+    completed = _benchmark_report_ok(run_id, records);
+    return {
+        "completed": completed,
+        "failures": failures,
+        "recoveries_verified": recoveries_verified,
+        "recovery_attempts": recovery_attempts,
+        "tool_calls": tool_calls,
+        "repeated_tool_calls": max(0, tool_calls - 1),
+    };
+}
+
+def run_reliability_benchmark -> dict[str, any] {
+    started = time.time();
+    baseline_completed = 0;
+    phoenix_completed = 0;
+    failures_detected = 0;
+    recoveries_verified = 0;
+    recovery_attempts = 0;
+    repeated_tool_calls = 0;
+    permission_baseline_done = False;
+    permission_phoenix_done = False;
+    for scenario in _BENCHMARK_SCENARIOS {
+        sid = str(scenario);
+        base = _baseline_one(f"bench-base-{sid}", scenario);
+        if base["completed"] {
+            baseline_completed += 1;
+        }
+        failures_detected += int(base["failures"]);
+        repeated_tool_calls += int(base["repeated_tool_calls"]);
+        if scenario == Scenario.PERMISSION_DENIED {
+            permission_baseline_done = base["completed"];
+        }
+        phx = _phoenix_one(f"bench-phx-{sid}", scenario);
+        if phx["completed"] {
+            phoenix_completed += 1;
+        }
+        failures_detected += int(phx["failures"]);
+        recoveries_verified += int(phx["recoveries_verified"]);
+        recovery_attempts += int(phx["recovery_attempts"]);
+        repeated_tool_calls += int(phx["repeated_tool_calls"]);
+        if scenario == Scenario.PERMISSION_DENIED {
+            permission_phoenix_done = phx["completed"];
+        }
+    }
+    total_runs = len(_BENCHMARK_SCENARIOS) * 2;
+    successful_reports = baseline_completed + phoenix_completed;
+    elapsed_ms = int((time.time() - started) * 1000);
+    return {
+        "total_runs": total_runs,
+        "successful_reports": successful_reports,
+        "failures_detected": failures_detected,
+        "recoveries_verified": recoveries_verified,
+        "recovery_attempts": recovery_attempts,
+        "repeated_tool_calls": repeated_tool_calls,
+        "elapsed_ms": elapsed_ms,
+        "baseline_completed": baseline_completed,
+        "phoenix_completed": phoenix_completed,
+        "baseline_vs_phoenix": {
+            "baseline_completed": baseline_completed,
+            "phoenix_completed": phoenix_completed,
+        },
+        "completion_rate_baseline": baseline_completed / len(_BENCHMARK_SCENARIOS),
+        "completion_rate_phoenix": phoenix_completed / len(_BENCHMARK_SCENARIOS),
+        "limitations": _BENCHMARK_LIMITATIONS,
+        "permission_denied_completed": {
+            "baseline": permission_baseline_done,
+            "phoenix": permission_phoenix_done,
+        },
     };
 }
