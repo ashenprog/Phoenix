@@ -186,6 +186,28 @@ def _recoveries_for(run: TaskRun) -> list[RecoveryAttempt] {
     return [run ->:HasRecovery:->][?:RecoveryAttempt];
 }
 
+def list_recoveries(run: TaskRun) -> list[RecoveryAttempt] {
+    return _recoveries_for(run);
+}
+
+def append_recovery(
+    run: TaskRun,
+    strategy: str,
+    status: RecoveryStatus,
+    reason: str,
+    attempt_number: int,
+    requires_approval: bool,
+) {
+    rec = RecoveryAttempt(
+        strategy=strategy,
+        status=status,
+        reason=reason,
+        attempt_number=attempt_number,
+        requires_approval=requires_approval,
+    );
+    run +>:HasRecovery():+> rec;
+}
+
 def serialize_run(run: TaskRun) -> dict[str, any] {
     steps_out: list[dict[str, any]] = [];
     for step in list_steps(run) {

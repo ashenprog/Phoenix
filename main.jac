@@ -2,9 +2,12 @@
 
 import from api {
     advance_run,
+    get_metrics,
     get_run,
     get_run_graph,
     list_runs,
+    pause_run,
+    resume_run,
     start_run,
 }
 

@@ -1,5 +1,6 @@
 import from engine { advance_run_state }
 import from models {
+    RecoveryStatus,
     RunStatus,
     Scenario,
     StepStatus,
@@ -58,22 +59,26 @@ test "NORMAL run completes in five advances" {
     delete_run(run);
 }
 
-test "PRIMARY_503 enters RECOVERING on retrieve" {
+test "PRIMARY_503 recovers and completes" {
     run = create_run("503 demo", Scenario.PRIMARY_503);
     advance_run_state(run);
-    state = advance_run_state(run);
-    assert state["steps"][0]["status"] == StepStatus.COMPLETED;
-    assert state["steps"][1]["status"] == StepStatus.FAILED;
-    assert state["status"] == RunStatus.RECOVERING;
-    has_503 = False;
-    for ev in state["events"] {
-        if ev["type"] == "FAILURE" and ev["category"] == "SERVICE_UNAVAILABLE" {
-            has_503 = True;
+    failed = advance_run_state(run);
+    assert failed["steps"][1]["status"] == StepStatus.FAILED;
+    assert failed["status"] == RunStatus.RECOVERING;
+    recovered = advance_run_state(run);
+    assert recovered["steps"][1]["status"] == StepStatus.COMPLETED;
+    assert recovered["status"] == RunStatus.RUNNING;
+    has_fallback = False;
+    for rec in recovered["recoveries"] {
+        if rec["strategy"] == "FALLBACK_TOOL" and rec["status"] == RecoveryStatus.VERIFIED {
+            has_fallback = True;
         }
     }
-    assert has_503;
-    stuck = advance_run_state(run);
-    assert stuck["status"] == RunStatus.RECOVERING;
-    assert stuck["steps"][1]["status"] == StepStatus.FAILED;
+    assert has_fallback;
+    state = recovered;
+    for _ in range(3) {
+        state = advance_run_state(run);
+    }
+    assert state["status"] == RunStatus.COMPLETED;
     delete_run(run);
 }
