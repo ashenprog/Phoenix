@@ -55,6 +55,15 @@ git switch -c dev1-core
 
 ```sh
 jac check .
+jac test -d tests/
 ```
+
+In the browser (`jac run --dev`), start a **NORMAL** run and use **Advance** until the report appears; repeat with **PRIMARY_503** to see a simulated failure and verified fallback.
+
+## Known limits
+
+- Faults are **controlled fixture scenarios** (`data/sources.json`), not live external outages.
+- Report wording uses **`DETERMINISTIC_FALLBACK`** (no LLM API key required).
+- Metrics `baseline_vs_phoenix` counts come from the five-scenario fixture benchmark in `recovery.jac`, not production reliability data.
 
 Commit only files you own; see file ownership in [docs/CONTRACT.md](docs/CONTRACT.md).

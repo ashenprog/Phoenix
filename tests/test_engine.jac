@@ -82,3 +82,69 @@ test "PRIMARY_503 recovers and completes" {
     assert state["status"] == RunStatus.COMPLETED;
     delete_run(run);
 }
+
+test "TEMP_TIMEOUT recovers and completes" {
+    run = create_run("timeout demo", Scenario.TEMP_TIMEOUT);
+    advance_run_state(run);
+    failed = advance_run_state(run);
+    assert failed["steps"][1]["status"] == StepStatus.FAILED;
+    assert failed["status"] == RunStatus.RECOVERING;
+    recovered = advance_run_state(run);
+    assert recovered["steps"][1]["status"] == StepStatus.COMPLETED;
+    assert recovered["status"] == RunStatus.RUNNING;
+    has_retry = False;
+    for rec in recovered["recoveries"] {
+        if rec["strategy"] == "RETRY" and rec["status"] == RecoveryStatus.VERIFIED {
+            has_retry = True;
+        }
+    }
+    assert has_retry;
+    state = recovered;
+    for _ in range(3) {
+        state = advance_run_state(run);
+    }
+    assert state["status"] == RunStatus.COMPLETED;
+    delete_run(run);
+}
+
+test "INVALID_OUTPUT recovers and completes" {
+    run = create_run("invalid demo", Scenario.INVALID_OUTPUT);
+    advance_run_state(run);
+    advance_run_state(run);
+    advance_run_state(run);
+    failed = advance_run_state(run);
+    assert failed["steps"][3]["status"] == StepStatus.FAILED;
+    assert failed["status"] == RunStatus.RECOVERING;
+    recovered = advance_run_state(run);
+    assert recovered["steps"][3]["status"] == StepStatus.COMPLETED;
+    assert recovered["status"] == RunStatus.RUNNING;
+    has_repair = False;
+    for rec in recovered["recoveries"] {
+        if rec["strategy"] == "REPAIR_OUTPUT" and rec["status"] == RecoveryStatus.VERIFIED {
+            has_repair = True;
+        }
+    }
+    assert has_repair;
+    state = advance_run_state(run);
+    assert state["status"] == RunStatus.COMPLETED;
+    delete_run(run);
+}
+
+test "PERMISSION_DENIED stops for human approval" {
+    run = create_run("permission demo", Scenario.PERMISSION_DENIED);
+    advance_run_state(run);
+    failed = advance_run_state(run);
+    assert failed["steps"][1]["status"] == StepStatus.FAILED;
+    assert failed["status"] == RunStatus.RECOVERING;
+    human = advance_run_state(run);
+    assert human["status"] == RunStatus.NEEDS_HUMAN;
+    assert human["steps"][1]["status"] == StepStatus.FAILED;
+    has_human = False;
+    for rec in human["recoveries"] {
+        if rec["strategy"] == "HUMAN_APPROVAL" {
+            has_human = True;
+        }
+    }
+    assert has_human;
+    delete_run(run);
+}
