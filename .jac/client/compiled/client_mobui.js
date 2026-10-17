@@ -1,0 +1,28 @@
+import { View as RNView, Text as RNText, Pressable as RNPressable, TextInput as RNTextInput, Image as RNImage, ScrollView as RNScrollView, StyleSheet as RNStyleSheet, Animated as RNAnimated, Easing as RNEasing, KeyboardAvoidingView as RNKeyboardAvoidingView, Keyboard as RNKeyboard, Platform as RNPlatform, ActivityIndicator as RNActivityIndicator, useWindowDimensions as RNuseWindowDimensions, FlatList as RNFlatList, SectionList as RNSectionList, RefreshControl as RNRefreshControl, Modal as RNModal, Switch as RNSwitch, StatusBar as RNStatusBar, Dimensions as RNDimensions, Alert as RNAlert, Linking as RNLinking } from "react-native";
+let View = RNView;
+let Text = RNText;
+let Pressable = RNPressable;
+let TextInput = RNTextInput;
+let Image = RNImage;
+let ScrollView = RNScrollView;
+let StyleSheet = RNStyleSheet;
+let Animated = RNAnimated;
+let Easing = RNEasing;
+let KeyboardAvoidingView = RNKeyboardAvoidingView;
+let Keyboard = RNKeyboard;
+let Platform = RNPlatform;
+let ActivityIndicator = RNActivityIndicator;
+let useWindowDimensions = RNuseWindowDimensions;
+let FlatList = RNFlatList;
+let SectionList = RNSectionList;
+let RefreshControl = RNRefreshControl;
+let Modal = RNModal;
+let Switch = RNSwitch;
+let StatusBar = RNStatusBar;
+let Dimensions = RNDimensions;
+let Alert = RNAlert;
+let Linking = RNLinking;
+export {ActivityIndicator, Alert, Animated, Dimensions, Easing, FlatList, Image, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, RefreshControl, ScrollView, SectionList, StatusBar, StyleSheet, Switch, Text, TextInput, View, useWindowDimensions};
+// ── Factory registry: constructor-type API → factory ─────────────────────────
+export const createAnimatedValue   = (initial = 0)              => new Animated.Value(initial);
+export const createAnimatedValueXY = (initial = { x: 0, y: 0 }) => new Animated.ValueXY(initial);
