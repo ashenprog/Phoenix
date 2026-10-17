@@ -1,32 +1,16 @@
 import from .graph_helpers {
     advance_button_disabled,
-    benchmark_caption,
     connection_label,
     demo_ready_message,
-    event_css_class,
-    event_title,
     footer_connection_note,
-    graph_node_class,
-    graph_node_subtitle,
-    graph_node_title,
-    graph_panel_caption,
-    metrics_has_data,
-    parse_metrics_snapshot,
     progress_caption,
     progress_percent,
     readable_diagnostic,
-    recovery_record_heading,
     refresh_button_label,
-    report_empty_title,
     rpc_error_message,
-    rpcrpc_response_failed,
+    rpc_response_failed,
     rpc_unwrap_payload,
     run_is_terminal,
-    status_display,
-    step_index_label,
-    timeline_empty_title,
-    progress_empty_label,
-    workflow_step_class,
 }
 import from ..api {
     advance_run,
@@ -38,6 +22,10 @@ import from ..api {
     start_run,
 }
 import from "@jac/runtime" { __jacClearCache }
+import from .ChaosLab { ChaosLab }
+import from .ExecutionGraph { ExecutionGraph }
+import from .Metrics { Metrics }
+import from .RecoveryTimeline { RecoveryTimeline }
 
 glob _request_in_flight: bool = False;
 glob _active_run_id: str = "";
@@ -73,45 +61,105 @@ def:pub Dashboard() -> JsxElement {
     has prompt: str = "";
     has scenario: str = "NORMAL";
     has run_state: dict[str, any] | None = None;
-    has graph_nodes: list[dict[str, any]] = [];
-    has metrics_snapshot: dict[str, any] | None = None;
-    has request_busy: bool = False;
+    has graph_data: dict[str, any] | None = None;
+    has graph_error: str = "";
+    has graph_loading: bool = False;
+    has metrics_data: dict[str, any] | None = None;
+    has metrics_error: str = "";
+    has metrics_loading: bool = True;
+    has request_busy: bool = True;
     has api_error: str = "";
 
     def handle_prompt_change(e: ChangeEvent) {
         prompt = e.target.value;
     }
 
-    def handle_scenario_change(e: ChangeEvent) {
-        scenario = e.target.value;
+    def handle_scenario_change(value: str) {
+        scenario = value;
     }
 
-    async def refresh_sidecars(run_id: str) -> None {
+    async def refresh_graph(run_id: str) {
+        graph_data = None;
+        graph_loading = True;
+        __jacClearCache();
         try {
-            metrics_resp = await get_metrics();
-            if not rpc_response_failed(metrics_resp) {
-                metrics_snapshot = rpc_unwrap_payload(metrics_resp);
+            response = await get_run_graph(run_id);
+            if rpc_response_failed(response) {
+                graph_data = None;
+                graph_error = readable_diagnostic(rpc_error_message(response));
+            } else {
+                graph_data = rpc_unwrap_payload(response);
+                graph_error = "";
             }
-        } except Exception as err {
-            _ = err;
+        } finally {
+            graph_loading = False;
         }
-        if len(run_id) == 0 {
+    }
+
+    async def refresh_metrics_data() {
+        __jacClearCache();
+        response = await get_metrics();
+        if rpc_response_failed(response) {
+            metrics_error = readable_diagnostic(rpc_error_message(response));
+        } else {
+            metrics_data = rpc_unwrap_payload(response);
+            metrics_error = "";
+        }
+    }
+
+    async def refresh_auxiliary_data(run_id: str) {
+        try {
+            await refresh_graph(run_id);
+        } except Exception as err {
+            graph_error = readable_diagnostic(
+                f"Could not load the workflow graph: {str(err)}"
+            );
+        }
+        try {
+            await refresh_metrics_data();
+        } except Exception as err {
+            metrics_error = readable_diagnostic(
+                f"Could not load run metrics: {str(err)}"
+            );
+        }
+    }
+
+    async can with entry {
+        if not _request_in_flight {
+            _request_in_flight = True;
+            metrics_loading = True;
+            request_busy = True;
+            try {
+                await refresh_metrics_data();
+            } except Exception as err {
+                metrics_error = readable_diagnostic(
+                    f"Could not load run metrics: {str(err)}"
+                );
+            } finally {
+                _request_in_flight = False;
+                metrics_loading = False;
+                request_busy = False;
+            }
+        }
+    }
+
+    async def handle_metrics_refresh() -> None {
+        if _request_in_flight {
             return;
         }
+        _request_in_flight = True;
+        request_busy = True;
+        metrics_loading = True;
         try {
-            graph_resp = await get_run_graph(run_id);
-            if not rpc_response_failed(graph_resp) {
-                graph_payload = rpc_unwrap_payload(graph_resp);
-                nodes_in = graph_payload.get("nodes", []);
-                graph_nodes = [];
-                if isinstance(nodes_in, list) {
-                    for graph_item in nodes_in {
-                        graph_nodes.append(graph_item as dict[str, any]);
-                    }
-                }
-            }
+            await refresh_metrics_data();
         } except Exception as err {
-            _ = err;
+            metrics_error = readable_diagnostic(
+                f"Could not load run metrics: {str(err)}"
+            );
+        } finally {
+            _request_in_flight = False;
+            request_busy = False;
+            metrics_loading = False;
         }
     }
 
@@ -141,7 +189,9 @@ def:pub Dashboard() -> JsxElement {
                 } else {
                     _active_run_id = run_id;
                     run_state = state;
-                    await refresh_sidecars(run_id);
+                    graph_data = None;
+                    graph_error = "";
+                    await refresh_auxiliary_data(run_id);
                 }
             }
         } except Exception as err {
@@ -167,7 +217,7 @@ def:pub Dashboard() -> JsxElement {
                 api_error = readable_diagnostic(rpc_error_message(response));
             } else {
                 run_state = rpc_unwrap_payload(response);
-                await refresh_sidecars(run_id);
+                await refresh_auxiliary_data(run_id);
             }
         } except Exception as err {
             api_error = readable_diagnostic(f"Could not refresh this run: {str(err)}");
@@ -192,7 +242,7 @@ def:pub Dashboard() -> JsxElement {
                 api_error = readable_diagnostic(rpc_error_message(response));
             } else {
                 run_state = rpc_unwrap_payload(response);
-                await refresh_sidecars(run_id);
+                await refresh_auxiliary_data(run_id);
             }
         } except Exception as err {
             api_error = readable_diagnostic(f"Could not advance this run: {str(err)}");
@@ -202,7 +252,7 @@ def:pub Dashboard() -> JsxElement {
         }
     }
 
-    async def handle_pause() -> None {
+    async def handle_run_control(resume: bool) -> None {
         if _request_in_flight or len(_active_run_id) == 0 {
             return;
         }
@@ -210,44 +260,36 @@ def:pub Dashboard() -> JsxElement {
         request_busy = True;
         api_error = "";
         run_id = _active_run_id;
+        response: dict[str, any] = {};
         try {
-            response = await pause_run(run_id);
+            __jacClearCache();
+            if resume {
+                response = await resume_run(run_id);
+            } else {
+                response = await pause_run(run_id);
+            }
             if rpc_response_failed(response) {
                 api_error = readable_diagnostic(rpc_error_message(response));
             } else {
                 run_state = rpc_unwrap_payload(response);
-                await refresh_sidecars(run_id);
+                await refresh_auxiliary_data(run_id);
             }
         } except Exception as err {
-            api_error = readable_diagnostic(f"Could not pause this run: {str(err)}");
+            api_error = readable_diagnostic(
+                f"Could not {resume and 'resume' or 'pause'} this run: {str(err)}"
+            );
         } finally {
             _request_in_flight = False;
             request_busy = False;
         }
     }
 
-    async def handle_resume() -> None {
-        if _request_in_flight or len(_active_run_id) == 0 {
-            return;
-        }
-        _request_in_flight = True;
-        request_busy = True;
-        api_error = "";
-        run_id = _active_run_id;
-        try {
-            response = await resume_run(run_id);
-            if rpc_response_failed(response) {
-                api_error = readable_diagnostic(rpc_error_message(response));
-            } else {
-                run_state = rpc_unwrap_payload(response);
-                await refresh_sidecars(run_id);
-            }
-        } except Exception as err {
-            api_error = readable_diagnostic(f"Could not resume this run: {str(err)}");
-        } finally {
-            _request_in_flight = False;
-            request_busy = False;
-        }
+    async def handle_pause(_e: MouseEvent) {
+        await handle_run_control(False);
+    }
+
+    async def handle_resume(_e: MouseEvent) {
+        await handle_run_control(True);
     }
 
     async def handle_play_503() -> None {
@@ -294,7 +336,9 @@ def:pub Dashboard() -> JsxElement {
                     break;
                 }
             }
-            await refresh_sidecars(run_id);
+            graph_data = None;
+            graph_error = "";
+            await refresh_auxiliary_data(run_id);
         } except Exception as err {
             api_error = readable_diagnostic(
                 f"Could not play the recovery demo: {str(err)}"
@@ -318,11 +362,26 @@ def:pub Dashboard() -> JsxElement {
         "findings": [],
         "recommendations": [],
         "source_ids": [],
-
     };
     findings: list[str] = [];
     recommendations: list[str] = [];
     source_ids: list[str] = [];
+    graph_nodes: list[dict[str, any]] = [];
+    graph_edges: list[dict[str, any]] = [];
+    if graph_data is not None {
+        graph_nodes_data = graph_data.get("nodes", []);
+        if isinstance(graph_nodes_data, list) {
+            for graph_node_data in graph_nodes_data {
+                graph_nodes.append(graph_node_data as dict[str, any]);
+            }
+        }
+        graph_edges_data = graph_data.get("edges", []);
+        if isinstance(graph_edges_data, list) {
+            for graph_edge_data in graph_edges_data {
+                graph_edges.append(graph_edge_data as dict[str, any]);
+            }
+        }
+    }
     has_report = False;
     if run_state is not None {
         status = str(run_state.get("status", "UNKNOWN"));
@@ -384,415 +443,169 @@ def:pub Dashboard() -> JsxElement {
         run_id_label = str(run_state.get("run_id", ""));
         model_mode = str(run_state.get("model_mode", "DETERMINISTIC_FALLBACK"));
     }
-    metrics_total = 0;
-    metrics_completed = 0;
-    metrics_failures = 0;
-    metrics_verified = 0;
-    baseline_completed = 0;
-    phoenix_completed = 0;
-    has_metrics = False;
-    if metrics_snapshot is not None {
-        has_metrics = True;
-        parsed = parse_metrics_snapshot(metrics_snapshot);
-        metrics_total = parsed["total_runs"];
-        metrics_completed = parsed["completed_runs"];
-        metrics_failures = parsed["failures_detected"];
-        metrics_verified = parsed["recoveries_verified"];
-        baseline_completed = parsed["baseline_completed"];
-        phoenix_completed = parsed["phoenix_completed"];
+    demo_done = False;
+    if run_state is not None {
+        demo_done = _recovery_demo_done(run_state);
     }
-    show_graph_nodes = len(graph_nodes) > 0;
 
-    return
-        <main className="phoenix-app">
-            <header className="topbar">
-                <a className="brand" href="#" aria-label="Phoenix home">
-                    <span className="brand-mark" aria-hidden="true">P</span>
-                    <span>PHOENIX</span>
-                </a>
-                <div className="topbar-meta">
-                    <span className="environment-pill">
-                        <span className="status-dot"></span>
-                        Local workspace
-                    </span>
-                    <span className="connection-state">
-                        {connection_label(has_active_run)}
-                    </span>
-                </div>
-            </header>
-            <section className="welcome-row" aria-labelledby="page-title">
+    return <main className="phoenix-app">
+        <header className="topbar">
+            <a className="brand" href="#" aria-label="Phoenix home">
+                <span className="brand-mark" aria-hidden="true">P</span>
+                <span>PHOENIX</span>
+            </a>
+            <div className="topbar-meta">
+                <span className="environment-pill"><span className="status-dot"></span>Local workspace</span>
+                <span className="connection-state">{connection_label(has_active_run)}</span>
+            </div>
+        </header>
+
+        <section className="welcome-row" aria-labelledby="page-title">
+            <div>
+                <p className="eyebrow">RELIABLE RESEARCH WORKFLOWS</p>
+                <h1 id="page-title">Run monitor</h1>
+                <p className="page-description">Start a task and follow its progress, recovery events, and verified result.</p>
+            </div>
+            <div className={"run-status status-" + status.lower()}>
+                <span className="status-dot status-dot-muted"></span>
+                {status.replace("_", " ")}
+            </div>
+        </section>
+
+        <section className="control-card" aria-labelledby="new-run-title">
+            <div className="section-heading">
                 <div>
-                    <p className="eyebrow">RELIABLE RESEARCH WORKFLOWS</p>
-                    <h1 id="page-title">Run monitor</h1>
-                    <p className="page-description">
-                        Start a task and follow its progress, recovery events, and verified result.
-                    </p>
+                    <p className="eyebrow">NEW WORKFLOW</p>
+                    <h2 id="new-run-title">Start a research task</h2>
                 </div>
-                <div className={"run-status status-" + status.lower()}>
-                    <span className="status-dot status-dot-muted"></span>
-                    {status.replace("_", " ")}
+                <span className="step-count">5 steps</span>
+            </div>
+            <div className="run-form">
+                <label className="field-label" htmlFor="task-prompt">What should PHOENIX research?</label>
+                <textarea
+                    id="task-prompt"
+                    className="task-input"
+                    placeholder="For example: Research how teams improve AI agent reliability"
+                    value={prompt}
+                    onChange={handle_prompt_change}
+                    rows={3}
+                />
+                <div className="form-actions">
+                    <ChaosLab scenario={scenario} onScenarioChange={handle_scenario_change} />
+                    <button className="start-button" type="button" disabled={request_busy or len(prompt.strip()) == 0} onClick={handle_start}>
+                        <span aria-hidden="true">▶</span>
+                        {request_busy and "Working..." or "Start run"}
+                    </button>
+                    <button className="demo-button" type="button" disabled={request_busy} onClick={handle_play_503}>
+                        Play 503 recovery
+                    </button>
                 </div>
-            </section>
-            <section className="control-card" aria-labelledby="new-run-title">
-                <div className="section-heading">
-                    <div>
-                        <p className="eyebrow">NEW WORKFLOW</p>
-                        <h2 id="new-run-title">Start a research task</h2>
-                    </div>
-                    <span className="step-count">5 steps</span>
-                </div>
-                <div className="run-form">
-                    <label className="field-label" htmlFor="task-prompt">
-                        What should PHOENIX research?
-                    </label>
-                    <textarea
-                        id="task-prompt"
-                        className="task-input"
-                        placeholder="For example: Research how teams improve AI agent reliability"
-                        value={prompt}
-                        onChange={handle_prompt_change}
-                        rows={3}
-                    />
-                    <div className="form-actions">
-                        <div className="scenario-field">
-                            <label className="field-label" htmlFor="scenario-select">
-                                Test scenario
-                            </label>
-                            <select
-                                id="scenario-select"
-                                className="scenario-select"
-                                value={scenario}
-                                onChange={handle_scenario_change}
-                            >
-                                <option value="NORMAL">Normal run</option>
-                                <option value="PRIMARY_503">Simulated API 503</option>
-                                <option value="TEMP_TIMEOUT">Simulated timeout</option>
-                                <option value="INVALID_OUTPUT">
-                                    Simulated invalid output
-                                </option>
-                                <option value="PERMISSION_DENIED">
-                                    Simulated permission denied
-                                </option>
-                            </select>
-                        </div>
-                        <button
-                            className="start-button"
-                            type="button"
-                            disabled={request_busy or len(prompt.strip()) == 0}
-                            onClick={handle_start}
-                        >
-                            <span aria-hidden="true">▶</span>
-                            {request_busy and "Working..." or "Start run"}
-                        </button>
-                        <button
-                            className="demo-button"
-                            type="button"
-                            disabled={request_busy}
-                            onClick={handle_play_503}
-                        >
-                            Play 503 recovery
-                        </button>
-                    </div>
-                    {api_error
-                        and not has_active_run
-                        and <p className="form-error" role="alert">{api_error}</p>}
-                    {not api_error
-                        and <p className="form-note" role="status">
-                            {demo_ready_message(
-                                _recovery_demo_done(
-                                    run_state if run_state is not None else {"steps": [], "recoveries": []}
-                                )
-                            )}
-                        </p>}
-                </div>
-            </section>
-            <section className="overview-grid" aria-label="Run overview">
-                <article className="panel progress-panel">
-                    <div className="panel-heading">
-                        <div>
-                            <p className="eyebrow">CURRENT RUN</p>
-                            <h2>Progress</h2>
-                        </div>
-                        <span className="empty-tag">
-                            {has_active_run and run_id_label or "No run yet"}
-                        </span>
-                    </div>
-                    <div className="progress-summary">
-                        <span className="progress-number">
-                            {has_active_run and str(completed_count) or "—"}
-                        </span>
-                        <span className="progress-copy">
-                            {has_active_run
-                                and f"of {step_total} steps completed"
-                                or "steps completed"}
-                        </span>
-                    </div>
-                    <div
-                        className="progress-track"
-                        role="progressbar"
-                        aria-label="Completed workflow steps"
-                        aria-valuemin={0}
-                        aria-valuemax={step_total}
-                        aria-valuenow={completed_count}
-                    >
-                        <span style={{"width": f"{progress_pct}%"}}></span>
-                    </div>
-                    <p className="muted-copy">
-                        {has_active_run
-                            and progress_caption(current_step, status)
-                            or "Run progress will appear here after a task starts."}
-                    </p>
-                    {api_error
-                        and has_active_run
-                        and <p className="form-error" role="alert">{api_error}</p>}
-                    {has_active_run
-                        and <div className="run-actions">
-                            <button
-                                className="secondary-button"
-                                type="button"
-                                disabled={request_busy}
-                                onClick={handle_refresh}
-                            >
-                                {refresh_button_label(request_busy, api_error)}
-                            </button>
-                            {status == "RUNNING" or status == "RECOVERING"
-                                and <button
-                                    className="secondary-button"
-                                    type="button"
-                                    disabled={request_busy}
-                                    onClick={handle_pause}
-                                >
-                                    Pause
-                                </button>}
-                            {status == "PAUSED"
-                                and <button
-                                    className="secondary-button"
-                                    type="button"
-                                    disabled={request_busy}
-                                    onClick={handle_resume}
-                                >
-                                    Resume
-                                </button>}
-                            {not terminal
-                                and <button
-                                    className="advance-button"
-                                    type="button"
-                                    disabled={advance_button_disabled(status, request_busy)}
-                                    onClick={handle_advance}
-                                >
-                                    Advance one step
-                                </button>}
-                        </div>}
-                </article>
-                <article className="panel metrics-panel">
-                    <div className="panel-heading">
-                        <div>
-                            <p className="eyebrow">RECORDED RESULTS</p>
-                            <h2>Run metrics</h2>
-                        </div>
-                        <span className="metric-icon" aria-hidden="true">↗</span>
-                    </div>
-                    {has_metrics and metrics_has_data(metrics_total)
-                        and <div className="metrics-grid" key="metrics-data">
-                            <p>
-                                <strong>{str(metrics_completed)}</strong> completed runs
-                            </p>
-                            <p>
-                                <strong>{str(metrics_failures)}</strong> failures detected
-                            </p>
-                            <p>
-                                <strong>{str(metrics_verified)}</strong> recoveries verified
-                            </p>
-                            <p className="muted-copy">
-                                {benchmark_caption(baseline_completed, phoenix_completed)}
-                            </p>
-                        </div>}
-                    {not has_metrics or not metrics_has_data(metrics_total)
-                        and <p className="metrics-empty">No test runs yet</p>}
-                    <p className="muted-copy">
-                        Metrics use recorded runs and the fixture benchmark only.
-                    </p>
-                </article>
-            </section>
-            <section className="panel graph-panel" aria-labelledby="workflow-title">
+                {api_error and not has_active_run and <p className="form-error" role="alert">{api_error}</p>}
+                {not api_error and <p className="form-note" role="status">
+                    {demo_ready_message(demo_done)}
+                </p>}
+            </div>
+        </section>
+
+        <section className="overview-grid" aria-label="Run overview">
+            <article className="panel progress-panel">
                 <div className="panel-heading">
                     <div>
-                        <p className="eyebrow">EXECUTION VIEW</p>
-                        <h2 id="workflow-title">Workflow graph</h2>
+                        <p className="eyebrow">CURRENT RUN</p>
+                        <h2>Progress</h2>
                     </div>
-                    <span className="graph-caption">
-                        {graph_panel_caption(has_active_run, run_id_label)}
+                    <span className="empty-tag">{has_active_run and run_id_label or "No run yet"}</span>
+                </div>
+                <div className="progress-summary">
+                    <span className="progress-number">{has_active_run and str(completed_count) or "—"}</span>
+                    <span className="progress-copy">
+                        {has_active_run and f"of {step_total} steps completed" or "steps completed"}
                     </span>
                 </div>
-                <div
-                    className="workflow-preview"
-                    aria-label="Backend-confirmed workflow steps"
-                >
-                    {if show_graph_nodes {
-                        for (index, graph_item) in enumerate(graph_nodes) {
-                            kind = str(graph_item.get("kind", "step"));
-                            <div
-                                className={graph_node_class(graph_item)}
-                                key={"graph-" + str(index)}
-                            >
-                                <span>{kind.upper()}</span>
-                                <strong>{graph_node_title(graph_item)}</strong>
-                                <small>{graph_node_subtitle(graph_item)}</small>
-                            </div>
-                        }
-                    } elif has_active_run {
-                        for step in steps {
-                            <div
-                                className={workflow_step_class(
-                                    str(step.get("status", "PENDING"))
-                                )}
-                                key={str(step.get("index", 0))}
-                            >
-                                <span>{step_index_label(int(step.get("index", 0)))}</span>
-                                <strong>{str(step.get("name", "Step"))}</strong>
-                                <small>
-                                    {status_display(str(step.get("status", "PENDING")))}
-                                </small>
-                                {step.get("error_summary")
-                                    and <small className="step-error">
-                                        {str(step.get("error_summary"))}
-                                    </small>}
-                            </div>
-                        }
-                    } else {
-                        <p className="muted-copy" key="workflow-empty">
-                            Start a run to display backend-confirmed step statuses.
-                        </p>
-                    } }
+                <div className="progress-track" role="progressbar" aria-label="Completed workflow steps" aria-valuemin={0} aria-valuemax={step_total} aria-valuenow={completed_count}>
+                    <span style={{"width": f"{progress_pct}%"}}></span>
                 </div>
-                {has_active_run
-                    and <p className="muted-copy graph-note">
-                        Shown statuses come from the latest backend response; the browser does not change step state.
-                    </p>}
-            </section>
-            <section className="lower-grid" aria-label="Run details">
-                <article className="panel timeline-panel">
-                    <div className="panel-heading">
-                        <div>
-                            <p className="eyebrow">AUDIT TRAIL</p>
-                            <h2>Event timeline</h2>
-                        </div>
-                        <span className="event-count">{str(len(events))} events</span>
+                <p className="muted-copy">
+                    {has_active_run and progress_caption(current_step, status) or "Run progress will appear here after a task starts."}
+                </p>
+                {api_error and has_active_run and <p className="form-error" role="alert">{api_error}</p>}
+                {has_active_run and <div className="run-actions">
+                    {request_busy and <p className="request-feedback" role="status" aria-live="polite">Waiting for the backend response…</p>}
+                    <button className="secondary-button" type="button" disabled={request_busy} onClick={handle_refresh}>
+                        {refresh_button_label(request_busy, api_error)}
+                    </button>
+                    {status == "PAUSED" and <button className="advance-button" type="button" disabled={request_busy} onClick={handle_resume}>
+                        {request_busy and "Resuming..." or "Resume"}
+                    </button>}
+                    {status == "RUNNING" or status == "RECOVERING" and <button className="secondary-button" type="button" disabled={request_busy} onClick={handle_pause}>
+                        {request_busy and "Pausing..." or "Pause"}
+                    </button>}
+                    {not terminal and <button className="advance-button" type="button" disabled={advance_button_disabled(status, request_busy)} onClick={handle_advance}>
+                        Advance one step
+                    </button>}
+                </div>}
+            </article>
+
+            <Metrics
+                metrics={metrics_data}
+                error={metrics_error}
+                loading={metrics_loading}
+                onRefresh={handle_metrics_refresh}
+            />
+        </section>
+
+        <ExecutionGraph
+            nodes={graph_nodes}
+            edges={graph_edges}
+            steps={steps}
+            events={events}
+            recoveries={recoveries}
+            run_id={run_id_label}
+            run_status={status}
+            error={graph_error}
+            loading={graph_loading}
+            has_run={has_active_run}
+        />
+
+        <section className="lower-grid" aria-label="Run details">
+            <RecoveryTimeline events={events} recoveries={recoveries} has_run={has_active_run} />
+
+            <article className="panel report-panel">
+                <div className="panel-heading">
+                    <div>
+                        <p className="eyebrow">FINAL OUTPUT</p>
+                        <h2>Research report</h2>
                     </div>
-                    {if len(events) == 0 {
-                        <div className="empty-state" key="timeline-empty">
-                            <span className="empty-state-mark" aria-hidden="true">
-                                ↳
-                            </span>
-                            <p>
-                                {has_active_run
-                                    and "No events recorded yet"
-                                    or "No events to display"}
-                            </p>
-                            <span>Backend events will appear here in time order.</span>
-                        </div>
-                    } else {
-                        <ol className="event-list" key="event-list">
-                            {for (index, event) in enumerate(events) {
-                                <li
-                                    className={event_css_class(
-                                        str(event.get("type", "event"))
-                                    )}
-                                    key={str(index)}
-                                >
-                                    <span
-                                        className="event-marker"
-                                        aria-hidden="true"
-                                    ></span>
-                                    <div className="event-content">
-                                        <div className="event-title-row">
-                                            <strong>{event_title(str(event.get("type", "EVENT")))}</strong>
-                                            {event.get("timestamp")
-                                                and <time>
-                                                    {str(event.get("timestamp"))}
-                                                </time>}
-                                        </div>
-                                        <p>
-                                            {event.get("detail")
-                                                and str(event.get("detail"))
-                                                or str(event.get("category", ""))}
-                                        </p>
-                                        {event.get("simulated")
-                                            and <span className="simulated-tag">
-                                                SIMULATED
-                                            </span>}
-                                    </div>
-                                </li>
-                            }}
-                        </ol>
-                    } }
-                    {if len(recoveries) > 0 {
-                        <div className="recovery-records" key="recovery-records">
-                            <h3>Recorded recovery attempts</h3>
-                            {for (index, recovery) in enumerate(recoveries) {
-                                <div className="recovery-record" key={str(index)}>
-                                    <strong>
-                                        {recovery_record_heading(
-                                            str(recovery.get("strategy", "Recovery")),
-                                            str(recovery.get("status", "UNKNOWN")),
-                                        )}
-                                    </strong>
-                                    <p>{str(recovery.get("reason", ""))}</p>
-                                </div>
-                            }}
-                        </div>
-                    }}
-                </article>
-                <article className="panel report-panel">
-                    <div className="panel-heading">
-                        <div>
-                            <p className="eyebrow">FINAL OUTPUT</p>
-                            <h2>Research report</h2>
-                        </div>
-                        <span className="report-icon" aria-hidden="true">▤</span>
+                    <span className="report-icon" aria-hidden="true">▤</span>
+                </div>
+                {if has_report {
+                    <div className="report-content" key="report-content">
+                        <p className="report-title">{str(final_report_data.get("title", "Verified report"))}</p>
+                        <p className="report-summary">{str(final_report_data.get("executive_summary", ""))}</p>
+                        <h3>Findings</h3>
+                        {for (index, finding) in enumerate(findings) {
+                            <p className="report-item" key={str(index)}>{str(finding)}</p>
+                        }}
+                        <h3>Recommendations</h3>
+                        {for (index, recommendation) in enumerate(recommendations) {
+                            <p className="report-item" key={"recommendation-" + str(index)}>{str(recommendation)}</p>
+                        }}
+                        <h3>Source IDs</h3>
+                        <p className="source-ids">{", ".join(source_ids)}</p>
+                        <span className="model-mode">{model_mode}</span>
                     </div>
-                    {if has_report {
-                        <div className="report-content" key="report-content">
-                            <p className="report-title">
-                                {str(final_report_data.get("title", "Verified report"))}
-                            </p>
-                            <p className="report-summary">
-                                {str(final_report_data.get("executive_summary", ""))}
-                            </p>
-                            <h3>Findings</h3>
-                            {for (index, finding) in enumerate(findings) {
-                                <p className="report-item" key={str(index)}>
-                                    {str(finding)}
-                                </p>
-                            }}
-                            <h3>Recommendations</h3>
-                            {for (index, recommendation) in enumerate(
-                                recommendations
-                            ) {
-                                <p
-                                    className="report-item"
-                                    key={"recommendation-" + str(index)}
-                                >
-                                    {str(recommendation)}
-                                </p>
-                            }}
-                            <h3>Source IDs</h3>
-                            <p className="source-ids">{", ".join(source_ids)}</p>
-                            <span className="model-mode">{model_mode}</span>
-                        </div>
-                    } else {
-                        <div className="report-empty" key="report-empty">
-                            <p>Your verified report will appear here.</p>
-                            <span>
-                                Source references and findings will come from the completed run.
-                            </span>
-                        </div>
-                    } }
-                </article>
-            </section>
-            <footer className="footer-note">
-                <span className="footer-indicator"></span>
-                {footer_connection_note(has_active_run)}
-            </footer>
-        </main>;
+                } else {
+                    <div className="report-empty" key="report-empty">
+                        <p>Your verified report will appear here.</p>
+                        <span>Source references and findings will come from the completed run.</span>
+                    </div>
+                }}
+            </article>
+        </section>
+
+        <footer className="footer-note">
+            <span className="footer-indicator"></span>
+            {footer_connection_note(has_active_run)}
+        </footer>
+    </main>;
 }
