@@ -133,6 +133,7 @@ def execute_recovery(
     category = str(run_context.get("category", "UNKNOWN_ERROR"));
     reason = str(run_context.get("reason", "Recovery action."));
     requires_approval = bool(run_context.get("requires_approval", False));
+    attempt_count = int(run_context.get("attempt_count", 0));
 
     if strategy == "STOP" {
         return {
@@ -143,6 +144,7 @@ def execute_recovery(
             "verification_status": "EXHAUSTED",
             "action_result": {},
             "category": category,
+            "attempt_count": attempt_count,
         };
     }
     if strategy == "HUMAN_APPROVAL" {
@@ -154,6 +156,7 @@ def execute_recovery(
             "verification_status": "PROPOSED",
             "action_result": {},
             "category": category,
+            "attempt_count": attempt_count,
         };
     }
     if strategy == "RESUME_CHECKPOINT" {
@@ -165,6 +168,7 @@ def execute_recovery(
             "verification_status": "PROPOSED",
             "action_result": {},
             "category": category,
+            "attempt_count": attempt_count,
         };
     }
 
@@ -188,6 +192,7 @@ def execute_recovery(
             "verification_status": "EXHAUSTED",
             "action_result": {},
             "category": category,
+            "attempt_count": attempt_count,
         };
     }
 
@@ -200,5 +205,6 @@ def execute_recovery(
         "verification_status": status,
         "action_result": action_result,
         "category": category,
+        "attempt_count": attempt_count,
     };
 }
