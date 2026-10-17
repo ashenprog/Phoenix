@@ -1,5 +1,6 @@
 """PHOENIX persistent task graph — matches docs/CONTRACT.md."""
 
+import datetime;
 import uuid;
 
 enum RunStatus: str {
@@ -138,6 +139,33 @@ def update_step(
     }
 }
 
+def append_event(
+    run: TaskRun,
+    event_type: str,
+    category: str,
+    step_index: int,
+    simulated: bool,
+    detail: str | None = None,
+) {
+    ts = datetime.datetime.now(datetime.timezone.utc).isoformat();
+    ev = FailureEvent(
+        event_type=event_type,
+        category=category,
+        step_index=step_index,
+        simulated=simulated,
+        timestamp=ts,
+        detail=detail,
+    );
+    run +>:HasEvent():+> ev;
+}
+
+def commit_checkpoint(run: TaskRun, completed_step: int) {
+    cp = _checkpoint_for(run);
+    if cp is not None {
+        cp.completed_step = completed_step;
+    }
+}
+
 def _checkpoint_for(run: TaskRun) -> Checkpoint | None {
     cps = [run ->:HasCheckpoint:->][?:Checkpoint];
     if len(cps) > 0 {
@@ -148,6 +176,10 @@ def _checkpoint_for(run: TaskRun) -> Checkpoint | None {
 
 def _events_for(run: TaskRun) -> list[FailureEvent] {
     return [run ->:HasEvent:->][?:FailureEvent];
+}
+
+def list_events(run: TaskRun) -> list[FailureEvent] {
+    return _events_for(run);
 }
 
 def _recoveries_for(run: TaskRun) -> list[RecoveryAttempt] {

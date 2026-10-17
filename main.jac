@@ -1,5 +1,13 @@
 """PHOENIX — full-stack entry (server + client)."""
 
+import from api {
+    advance_run,
+    get_run,
+    get_run_graph,
+    list_runs,
+    start_run,
+}
+
 def:pub phoenix_health -> dict[str, any] {
     return {
         "ok": True,

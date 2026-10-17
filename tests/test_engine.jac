@@ -1,4 +1,6 @@
+import from engine { advance_run_state }
 import from models {
+    RunStatus,
     Scenario,
     StepStatus,
     create_run,
@@ -37,4 +39,41 @@ test "two runs do not leak step state" {
 
     delete_run(loaded_a);
     delete_run(loaded_b);
+}
+
+test "NORMAL run completes in five advances" {
+    run = create_run("Research AI reliability", Scenario.NORMAL);
+    state = serialize_run(run);
+    for _ in range(5) {
+        state = advance_run_state(run);
+    }
+    assert state["status"] == RunStatus.COMPLETED;
+    assert state["checkpoint"]["completed_step"] == 4;
+    assert state["final_report"] is not None;
+    assert "fixture-primary-1" in state["final_report"]["source_ids"];
+    before = serialize_run(run);
+    after = advance_run_state(run);
+    assert after["checkpoint"]["completed_step"] == before["checkpoint"]["completed_step"];
+    assert after["steps"][4]["status"] == StepStatus.COMPLETED;
+    delete_run(run);
+}
+
+test "PRIMARY_503 enters RECOVERING on retrieve" {
+    run = create_run("503 demo", Scenario.PRIMARY_503);
+    advance_run_state(run);
+    state = advance_run_state(run);
+    assert state["steps"][0]["status"] == StepStatus.COMPLETED;
+    assert state["steps"][1]["status"] == StepStatus.FAILED;
+    assert state["status"] == RunStatus.RECOVERING;
+    has_503 = False;
+    for ev in state["events"] {
+        if ev["type"] == "FAILURE" and ev["category"] == "SERVICE_UNAVAILABLE" {
+            has_503 = True;
+        }
+    }
+    assert has_503;
+    stuck = advance_run_state(run);
+    assert stuck["status"] == RunStatus.RECOVERING;
+    assert stuck["steps"][1]["status"] == StepStatus.FAILED;
+    delete_run(run);
 }
