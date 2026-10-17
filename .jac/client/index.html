@@ -37,7 +37,7 @@
         window.$RefreshReg$ = function() {};
         window.$RefreshSig$ = function() { return function(type) { return type; }; };
         window.__jac_refresh_installed__ = true;
-        return import("/phoenix/compiled/_entry.js");
+        return import("/compiled/_entry.js");
       }).then(function() {
         // entry loaded cleanly: clears the client slot in /__build_status
         try { import.meta.hot.send("jac:client-ready"); } catch(e) {}
@@ -51,7 +51,7 @@
         });
       });
     } else {
-      import("/phoenix/compiled/_entry.js").catch(function() {});
+      import("/compiled/_entry.js").catch(function() {});
     }
     </script>
   </body>
