@@ -1,10 +1,12 @@
-import from models { Scenario }
+import from ai { compose_report, explain_recovery }
+import from models { ModelMode, Scenario }
 import from recovery {
     classify_failure,
     execute_recovery,
     select_strategy,
 }
 import from tools {
+    check_report,
     extract_key_points,
     reset_fault_state,
     retrieve_primary,
@@ -253,4 +255,26 @@ test "recovery interleaving isolation and attempt metadata" {
     assert not out_retry_cap["executed"];
     assert out_retry_cap["verification_status"] == "EXHAUSTED";
     assert out_retry_cap["attempt_count"] == 2;
+}
+
+test "ai deterministic report and recovery explanation" {
+    composed = compose_report(
+        "agent reliability",
+        ["Fixture finding one."],
+        ["fixture-primary-1", "not-a-real-fixture-id"],
+    );
+    assert composed["model_mode"] == ModelMode.DETERMINISTIC_FALLBACK;
+    report_doc = composed["report"];
+    assert "fixture-primary-1" in report_doc["source_ids"];
+    assert "not-a-real-fixture-id" not in report_doc["source_ids"];
+    assert check_report("ai-test", Scenario.NORMAL, report_doc)["ok"];
+
+    explained = explain_recovery(
+        "SERVICE_UNAVAILABLE",
+        "FALLBACK_TOOL",
+        "Primary tool unavailable; use approved backup.",
+    );
+    assert explained["model_mode"] == ModelMode.DETERMINISTIC_FALLBACK;
+    assert explained["model_mode"] != ModelMode.LIVE_MODEL;
+    assert "FALLBACK_TOOL" in explained["text"];
 }
