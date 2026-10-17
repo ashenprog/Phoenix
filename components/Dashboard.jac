@@ -42,6 +42,25 @@ def _event_title(event: dict[str, any]) -> str {
     return event_type.replace("_", " ").lower().capitalize();
 }
 
+def _readable_diagnostic(message: str) -> str {
+    if message == "run_not_found" {
+        return "Run not found. The run ID may be invalid or unavailable. Start a new run or retry the refresh.";
+    }
+    normalized = message.lower();
+    if (
+        "failed to fetch" in normalized
+        or "networkerror" in normalized
+        or "network error" in normalized
+        or "load failed" in normalized
+    ) {
+        return "Cannot reach the PHOENIX server. Check that it is running, then retry the request.";
+    }
+    if "timed out" in normalized or "timeout" in normalized {
+        return "The PHOENIX server did not respond in time. Retry the request or refresh the run.";
+    }
+    return message.replace("_", " ");
+}
+
 def:pub Dashboard() -> JsxElement {
     has prompt: str = "";
     has scenario: str = "NORMAL";
@@ -74,18 +93,22 @@ def:pub Dashboard() -> JsxElement {
             __jacClearCache();
             response = await start_run(task_prompt, scenario);
             if not bool(response.get("ok", True)) {
-                api_error = str(response.get("error", "The server could not start the run."));
+                api_error = _readable_diagnostic(
+                    str(response.get("error", "The server could not start the run."))
+                );
             } else {
                 run_id = str(response.get("run_id", ""));
                 if len(run_id) == 0 {
-                    api_error = "The server returned a run without a run ID.";
+                    api_error = "The server returned an invalid run without a run ID. Try starting the task again.";
                 } else {
                     _active_run_id = run_id;
                     run_state = response;
                 }
             }
         } except Exception as err {
-            api_error = f"Could not start the run: {str(err)}";
+            api_error = _readable_diagnostic(
+                f"Could not start the run: {str(err)}"
+            );
         } finally {
             _request_in_flight = False;
             request_busy = False;
@@ -104,12 +127,16 @@ def:pub Dashboard() -> JsxElement {
             __jacClearCache();
             response = await get_run(run_id);
             if not bool(response.get("ok", True)) {
-                api_error = str(response.get("error", "Run not found. Check the run ID and try again."));
+                api_error = _readable_diagnostic(
+                    str(response.get("error", "Run not found. Check the run ID and try again."))
+                );
             } else {
                 run_state = response;
             }
         } except Exception as err {
-            api_error = f"Could not refresh this run: {str(err)}";
+            api_error = _readable_diagnostic(
+                f"Could not refresh this run: {str(err)}"
+            );
         } finally {
             _request_in_flight = False;
             request_busy = False;
@@ -128,12 +155,16 @@ def:pub Dashboard() -> JsxElement {
             __jacClearCache();
             response = await advance_run(run_id);
             if not bool(response.get("ok", True)) {
-                api_error = str(response.get("error", "Run not found. Check the run ID and try again."));
+                api_error = _readable_diagnostic(
+                    str(response.get("error", "Run not found. Check the run ID and try again."))
+                );
             } else {
                 run_state = response;
             }
         } except Exception as err {
-            api_error = f"Could not advance this run: {str(err)}";
+            api_error = _readable_diagnostic(
+                f"Could not advance this run: {str(err)}"
+            );
         } finally {
             _request_in_flight = False;
             request_busy = False;
@@ -290,7 +321,7 @@ def:pub Dashboard() -> JsxElement {
                         {request_busy and "Working..." or "Start run"}
                     </button>
                 </div>
-                {api_error and <p className="form-error" role="alert">{api_error}</p>}
+                {api_error and not has_active_run and <p className="form-error" role="alert">{api_error}</p>}
                 {not api_error and <p className="form-note" role="status">
                     Each Advance action requests one backend transition. Progress is never generated in the browser.
                 </p>}
@@ -318,9 +349,10 @@ def:pub Dashboard() -> JsxElement {
                 <p className="muted-copy">
                     {has_active_run and f"Current step: {current_step + 1} · {status.replace('_', ' ')}" or "Run progress will appear here after a task starts."}
                 </p>
+                {api_error and has_active_run and <p className="form-error" role="alert">{api_error}</p>}
                 {has_active_run and <div className="run-actions">
                     <button className="secondary-button" type="button" disabled={request_busy} onClick={handle_refresh}>
-                        {request_busy and "Refreshing..." or "Refresh from server"}
+                        {request_busy and "Refreshing..." or (api_error and "Retry display / Refresh" or "Refresh from server")}
                     </button>
                     {not terminal and <button className="advance-button" type="button" disabled={request_busy} onClick={handle_advance}>
                         Advance one step
