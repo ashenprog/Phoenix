@@ -2,8 +2,9 @@
 name = "phoenix"
 version = "0.1.0"
 description = "PHOENIX reliability demo — multi-step research workflow with recovery"
+entry-point = "main"
+kind = "web-app"
 jac-version = "==0.37.25"
-default-app = "phoenix"
 
 [dependencies]
 [dependencies.npm]
@@ -26,12 +27,3 @@ typescript = "^5.3.3"
 watchdog = ">=3.0.0"
 
 [client]
-
-[apps.phoenix]
-kind = "web-app"
-entry-point = "main"
-
-[apps.api]
-kind = "service"
-entry-point = "api"
-route = "/api"

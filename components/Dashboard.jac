@@ -1,70 +1,80 @@
-import from ..api { start_run, get_run, advance_run }
+import from .graph_helpers {
+    advance_button_disabled,
+    benchmark_caption,
+    connection_label,
+    demo_ready_message,
+    event_css_class,
+    event_title,
+    footer_connection_note,
+    graph_node_class,
+    graph_node_subtitle,
+    graph_node_title,
+    graph_panel_caption,
+    metrics_has_data,
+    parse_metrics_snapshot,
+    progress_caption,
+    progress_percent,
+    readable_diagnostic,
+    recovery_record_heading,
+    refresh_button_label,
+    report_empty_title,
+    rpc_error_message,
+    rpcrpc_response_failed,
+    rpc_unwrap_payload,
+    run_is_terminal,
+    status_display,
+    step_index_label,
+    timeline_empty_title,
+    progress_empty_label,
+    workflow_step_class,
+}
+import from ..api {
+    advance_run,
+    get_metrics,
+    get_run,
+    get_run_graph,
+    pause_run,
+    resume_run,
+    start_run,
+}
 import from "@jac/runtime" { __jacClearCache }
 
 glob _request_in_flight: bool = False;
 glob _active_run_id: str = "";
 
-def _event_title(event: dict[str, any]) -> str {
-    event_type = str(event.get("type", "EVENT"));
-    if event_type == "STEP_STARTED" {
-        return "Step started";
+def _recovery_demo_done(state: dict[str, any]) -> bool {
+    steps_data = state.get("steps", []);
+    retrieve_ok = False;
+    if isinstance(steps_data, list) and len(steps_data) > 1 {
+        step1 = steps_data[1];
+        if isinstance(step1, dict) and step1.get("status") == "COMPLETED" {
+            retrieve_ok = True;
+        }
     }
-    if event_type == "STEP_COMPLETED" {
-        return "Step completed";
+    if not retrieve_ok {
+        return False;
     }
-    if event_type == "TOOL_EXECUTED" {
-        return "Tool executed";
+    recs = state.get("recoveries", []);
+    if not isinstance(recs, list) {
+        return False;
     }
-    if event_type == "FAILURE" {
-        return "Failure detected";
+    for rec in recs {
+        if not isinstance(rec, dict) {
+            continue;
+        }
+        if rec.get("strategy") == "FALLBACK_TOOL" and rec.get("status") == "VERIFIED" {
+            return True;
+        }
     }
-    if event_type == "STRATEGY_SELECTED" {
-        return "Recovery strategy selected";
-    }
-    if event_type == "RECOVERY_STARTED" {
-        return "Recovery started";
-    }
-    if event_type == "RECOVERY_VERIFIED" {
-        return "Recovery verified";
-    }
-    if event_type == "RUN_RESUMED" {
-        return "Run resumed";
-    }
-    if event_type == "RUN_PAUSED" {
-        return "Run paused";
-    }
-    if event_type == "NEEDS_HUMAN" {
-        return "Human action required";
-    }
-    if event_type == "RUN_COMPLETED" {
-        return "Run completed";
-    }
-    return event_type.replace("_", " ").lower().capitalize();
-}
-
-def _readable_diagnostic(message: str) -> str {
-    if message == "run_not_found" {
-        return "Run not found. The run ID may be invalid or unavailable. Start a new run or retry the refresh.";
-    }
-    normalized = message.lower();
-    if (
-        "failed to fetch" in normalized
-        or "networkerror" in normalized
-        or "network error" in normalized
-        or "load failed" in normalized
-    ) {
-        return "Cannot reach the PHOENIX server. Check that it is running, then retry the request.";
-    }
-    if "timed out" in normalized or "timeout" in normalized {
-        return "The PHOENIX server did not respond in time. Retry the request or refresh the run.";
-    }
-    return message.replace("_", " ");
+    return False;
 }
 
 def:pub Dashboard() -> JsxElement {
     has prompt: str = "";
     has scenario: str = "NORMAL";
     has run_state: dict[str, any] | None = None;
+    has graph_nodes: list[dict[str, any]] = [];
+    has metrics_snapshot: dict[str, any] | None = None;
     has request_busy: bool = False;
     has api_error: str = "";
 
@@ -74,6 +84,35 @@ def:pub Dashboard() -> JsxElement {
 
     def handle_scenario_change(e: ChangeEvent) {
         scenario = e.target.value;
+    }
+
+    async def refresh_sidecars(run_id: str) -> None {
+        try {
+            metrics_resp = await get_metrics();
+            if not rpc_response_failed(metrics_resp) {
+                metrics_snapshot = rpc_unwrap_payload(metrics_resp);
+            }
+        } except Exception as err {
+            _ = err;
+        }
+        if len(run_id) == 0 {
+            return;
+        }
+        try {
+            graph_resp = await get_run_graph(run_id);
+            if not rpc_response_failed(graph_resp) {
+                graph_payload = rpc_unwrap_payload(graph_resp);
+                nodes_in = graph_payload.get("nodes", []);
+                graph_nodes = [];
+                if isinstance(nodes_in, list) {
+                    for graph_item in nodes_in {
+                        graph_nodes.append(graph_item as dict[str, any]);
+                    }
+                }
+            }
+        } except Exception as err {
+            _ = err;
+        }
     }
 
     async def handle_start() -> None {
@@ -92,21 +131,21 @@ def:pub Dashboard() -> JsxElement {
             prompt = task_prompt;
             __jacClearCache();
             response = await start_run(task_prompt, scenario);
-            if not bool(response.get("ok", True)) {
-                api_error = _readable_diagnostic(
-                    str(response.get("error", "The server could not start the run."))
-                );
+            if rpc_response_failed(response) {
+                api_error = readable_diagnostic(rpc_error_message(response));
             } else {
-                run_id = str(response.get("run_id", ""));
+                state = rpc_unwrap_payload(response);
+                run_id = str(state.get("run_id", ""));
                 if len(run_id) == 0 {
                     api_error = "The server returned an invalid run without a run ID. Try starting the task again.";
                 } else {
                     _active_run_id = run_id;
-                    run_state = response;
+                    run_state = state;
+                    await refresh_sidecars(run_id);
                 }
             }
         } except Exception as err {
-            api_error = _readable_diagnostic(f"Could not start the run: {str(err)}");
+            api_error = readable_diagnostic(f"Could not start the run: {str(err)}");
         } finally {
             _request_in_flight = False;
             request_busy = False;
@@ -124,19 +163,14 @@ def:pub Dashboard() -> JsxElement {
         try {
             __jacClearCache();
             response = await get_run(run_id);
-            if not bool(response.get("ok", True)) {
-                api_error = _readable_diagnostic(
-                    str(
-                        response.get(
-                            "error", "Run not found. Check the run ID and try again."
-                        )
-                    )
-                );
+            if rpc_response_failed(response) {
+                api_error = readable_diagnostic(rpc_error_message(response));
             } else {
-                run_state = response;
+                run_state = rpc_unwrap_payload(response);
+                await refresh_sidecars(run_id);
             }
         } except Exception as err {
-            api_error = _readable_diagnostic(f"Could not refresh this run: {str(err)}");
+            api_error = readable_diagnostic(f"Could not refresh this run: {str(err)}");
         } finally {
             _request_in_flight = False;
             request_busy = False;
@@ -154,19 +188,117 @@ def:pub Dashboard() -> JsxElement {
         try {
             __jacClearCache();
             response = await advance_run(run_id);
-            if not bool(response.get("ok", True)) {
-                api_error = _readable_diagnostic(
-                    str(
-                        response.get(
-                            "error", "Run not found. Check the run ID and try again."
-                        )
-                    )
-                );
+            if rpc_response_failed(response) {
+                api_error = readable_diagnostic(rpc_error_message(response));
             } else {
-                run_state = response;
+                run_state = rpc_unwrap_payload(response);
+                await refresh_sidecars(run_id);
             }
         } except Exception as err {
-            api_error = _readable_diagnostic(f"Could not advance this run: {str(err)}");
+            api_error = readable_diagnostic(f"Could not advance this run: {str(err)}");
+        } finally {
+            _request_in_flight = False;
+            request_busy = False;
+        }
+    }
+
+    async def handle_pause() -> None {
+        if _request_in_flight or len(_active_run_id) == 0 {
+            return;
+        }
+        _request_in_flight = True;
+        request_busy = True;
+        api_error = "";
+        run_id = _active_run_id;
+        try {
+            response = await pause_run(run_id);
+            if rpc_response_failed(response) {
+                api_error = readable_diagnostic(rpc_error_message(response));
+            } else {
+                run_state = rpc_unwrap_payload(response);
+                await refresh_sidecars(run_id);
+            }
+        } except Exception as err {
+            api_error = readable_diagnostic(f"Could not pause this run: {str(err)}");
+        } finally {
+            _request_in_flight = False;
+            request_busy = False;
+        }
+    }
+
+    async def handle_resume() -> None {
+        if _request_in_flight or len(_active_run_id) == 0 {
+            return;
+        }
+        _request_in_flight = True;
+        request_busy = True;
+        api_error = "";
+        run_id = _active_run_id;
+        try {
+            response = await resume_run(run_id);
+            if rpc_response_failed(response) {
+                api_error = readable_diagnostic(rpc_error_message(response));
+            } else {
+                run_state = rpc_unwrap_payload(response);
+                await refresh_sidecars(run_id);
+            }
+        } except Exception as err {
+            api_error = readable_diagnostic(f"Could not resume this run: {str(err)}");
+        } finally {
+            _request_in_flight = False;
+            request_busy = False;
+        }
+    }
+
+    async def handle_play_503() -> None {
+        if _request_in_flight {
+            return;
+        }
+        _request_in_flight = True;
+        request_busy = True;
+        api_error = "";
+        try {
+            task_prompt = prompt.strip();
+            if len(task_prompt) == 0 {
+                task_prompt = "Demo: simulated primary API 503 recovery";
+                prompt = task_prompt;
+            }
+            scenario = "PRIMARY_503";
+            __jacClearCache();
+            response = await start_run(task_prompt, scenario);
+            if rpc_response_failed(response) {
+                api_error = readable_diagnostic(rpc_error_message(response));
+                return;
+            }
+            state = rpc_unwrap_payload(response);
+            run_id = str(state.get("run_id", ""));
+            if len(run_id) == 0 {
+                api_error = "Could not start the recovery demo run.";
+                return;
+            }
+            _active_run_id = run_id;
+            run_state = state;
+            demo_state = state;
+            for _ in range(8) {
+                if _recovery_demo_done(demo_state) {
+                    break;
+                }
+                adv = await advance_run(run_id);
+                if rpc_response_failed(adv) {
+                    api_error = readable_diagnostic(rpc_error_message(adv));
+                    break;
+                }
+                demo_state = rpc_unwrap_payload(adv);
+                run_state = demo_state;
+                if demo_state.get("status") == "COMPLETED" {
+                    break;
+                }
+            }
+            await refresh_sidecars(run_id);
+        } except Exception as err {
+            api_error = readable_diagnostic(
+                f"Could not play the recovery demo: {str(err)}"
+            );
         } finally {
             _request_in_flight = False;
             request_busy = False;
@@ -243,23 +375,33 @@ def:pub Dashboard() -> JsxElement {
             }
         }
     }
-    terminal = (
-        status == "COMPLETED"
-        or status == "STOPPED"
-        or status == "PAUSED"
-        or status == "NEEDS_HUMAN"
-    );
-    progress_percent = 0;
+    terminal = run_is_terminal(status);
+    progress_pct = progress_percent(completed_count, step_total);
     model_mode = "DETERMINISTIC_FALLBACK";
-    if step_total > 0 {
-        progress_percent = completed_count * 100 // step_total;
-    }
     has_active_run = run_state is not None;
     run_id_label = "";
     if run_state is not None {
         run_id_label = str(run_state.get("run_id", ""));
         model_mode = str(run_state.get("model_mode", "DETERMINISTIC_FALLBACK"));
     }
+    metrics_total = 0;
+    metrics_completed = 0;
+    metrics_failures = 0;
+    metrics_verified = 0;
+    baseline_completed = 0;
+    phoenix_completed = 0;
+    has_metrics = False;
+    if metrics_snapshot is not None {
+        has_metrics = True;
+        parsed = parse_metrics_snapshot(metrics_snapshot);
+        metrics_total = parsed["total_runs"];
+        metrics_completed = parsed["completed_runs"];
+        metrics_failures = parsed["failures_detected"];
+        metrics_verified = parsed["recoveries_verified"];
+        baseline_completed = parsed["baseline_completed"];
+        phoenix_completed = parsed["phoenix_completed"];
+    }
+    show_graph_nodes = len(graph_nodes) > 0;
 
     return
         <main className="phoenix-app">
@@ -274,9 +416,7 @@ def:pub Dashboard() -> JsxElement {
                         Local workspace
                     </span>
                     <span className="connection-state">
-                        {has_active_run
-                            and "Backend connected"
-                            or "Waiting for backend"}
+                        {connection_label(has_active_run)}
                     </span>
                 </div>
             </header>
@@ -344,13 +484,25 @@ def:pub Dashboard() -> JsxElement {
                             <span aria-hidden="true">▶</span>
                             {request_busy and "Working..." or "Start run"}
                         </button>
+                        <button
+                            className="demo-button"
+                            type="button"
+                            disabled={request_busy}
+                            onClick={handle_play_503}
+                        >
+                            Play 503 recovery
+                        </button>
                     </div>
                     {api_error
                         and not has_active_run
                         and <p className="form-error" role="alert">{api_error}</p>}
                     {not api_error
                         and <p className="form-note" role="status">
-                            Each Advance action requests one backend transition. Progress is never generated in the browser.
+                            {demo_ready_message(
+                                _recovery_demo_done(
+                                    run_state if run_state is not None else {"steps": [], "recoveries": []}
+                                )
+                            )}
                         </p>}
                 </div>
             </section>
@@ -383,13 +535,11 @@ def:pub Dashboard() -> JsxElement {
                         aria-valuemax={step_total}
                         aria-valuenow={completed_count}
                     >
-                        <span style={{"width": f"{progress_percent}%"}}></span>
+                        <span style={{"width": f"{progress_pct}%"}}></span>
                     </div>
                     <p className="muted-copy">
                         {has_active_run
-                            and f"Current step: {current_step + 1} · {status.replace(
-                                '_', ' '
-                            )}"
+                            and progress_caption(current_step, status)
                             or "Run progress will appear here after a task starts."}
                     </p>
                     {api_error
@@ -403,19 +553,31 @@ def:pub Dashboard() -> JsxElement {
                                 disabled={request_busy}
                                 onClick={handle_refresh}
                             >
-                                {request_busy
-                                    and "Refreshing..."
-                                    or (
-                                        api_error
-                                        and "Retry display / Refresh"
-                                        or "Refresh from server"
-                                    )}
+                                {refresh_button_label(request_busy, api_error)}
                             </button>
+                            {status == "RUNNING" or status == "RECOVERING"
+                                and <button
+                                    className="secondary-button"
+                                    type="button"
+                                    disabled={request_busy}
+                                    onClick={handle_pause}
+                                >
+                                    Pause
+                                </button>}
+                            {status == "PAUSED"
+                                and <button
+                                    className="secondary-button"
+                                    type="button"
+                                    disabled={request_busy}
+                                    onClick={handle_resume}
+                                >
+                                    Resume
+                                </button>}
                             {not terminal
                                 and <button
                                     className="advance-button"
                                     type="button"
-                                    disabled={request_busy}
+                                    disabled={advance_button_disabled(status, request_busy)}
                                     onClick={handle_advance}
                                 >
                                     Advance one step
@@ -430,8 +592,26 @@ def:pub Dashboard() -> JsxElement {
                         </div>
                         <span className="metric-icon" aria-hidden="true">↗</span>
                     </div>
-                    <p className="metrics-empty">No test runs yet</p>
-                    <p className="muted-copy">Metrics will use recorded runs only.</p>
+                    {has_metrics and metrics_has_data(metrics_total)
+                        and <div className="metrics-grid" key="metrics-data">
+                            <p>
+                                <strong>{str(metrics_completed)}</strong> completed runs
+                            </p>
+                            <p>
+                                <strong>{str(metrics_failures)}</strong> failures detected
+                            </p>
+                            <p>
+                                <strong>{str(metrics_verified)}</strong> recoveries verified
+                            </p>
+                            <p className="muted-copy">
+                                {benchmark_caption(baseline_completed, phoenix_completed)}
+                            </p>
+                        </div>}
+                    {not has_metrics or not metrics_has_data(metrics_total)
+                        and <p className="metrics-empty">No test runs yet</p>}
+                    <p className="muted-copy">
+                        Metrics use recorded runs and the fixture benchmark only.
+                    </p>
                 </article>
             </section>
             <section className="panel graph-panel" aria-labelledby="workflow-title">
@@ -441,28 +621,37 @@ def:pub Dashboard() -> JsxElement {
                         <h2 id="workflow-title">Workflow graph</h2>
                     </div>
                     <span className="graph-caption">
-                        {has_active_run
-                            and f"Run {run_id_label}"
-                            or "Workflow structure"}
+                        {graph_panel_caption(has_active_run, run_id_label)}
                     </span>
                 </div>
                 <div
                     className="workflow-preview"
                     aria-label="Backend-confirmed workflow steps"
                 >
-                    {if has_active_run {
+                    {if show_graph_nodes {
+                        for (index, graph_item) in enumerate(graph_nodes) {
+                            kind = str(graph_item.get("kind", "step"));
+                            <div
+                                className={graph_node_class(graph_item)}
+                                key={"graph-" + str(index)}
+                            >
+                                <span>{kind.upper()}</span>
+                                <strong>{graph_node_title(graph_item)}</strong>
+                                <small>{graph_node_subtitle(graph_item)}</small>
+                            </div>
+                        }
+                    } elif has_active_run {
                         for step in steps {
                             <div
-                                className={"workflow-step step-"
-                                    + str(step.get("status", "PENDING")).lower()}
+                                className={workflow_step_class(
+                                    str(step.get("status", "PENDING"))
+                                )}
                                 key={str(step.get("index", 0))}
                             >
-                                <span>{f"{int(step.get('index', 0)) + 1:02d}"}</span>
+                                <span>{step_index_label(int(step.get("index", 0)))}</span>
                                 <strong>{str(step.get("name", "Step"))}</strong>
                                 <small>
-                                    {str(step.get("status", "PENDING")).replace(
-                                        "_", " "
-                                    )}
+                                    {status_display(str(step.get("status", "PENDING")))}
                                 </small>
                                 {step.get("error_summary")
                                     and <small className="step-error">
@@ -506,8 +695,9 @@ def:pub Dashboard() -> JsxElement {
                         <ol className="event-list" key="event-list">
                             {for (index, event) in enumerate(events) {
                                 <li
-                                    className={"event-item event-"
-                                        + str(event.get("type", "event")).lower()}
+                                    className={event_css_class(
+                                        str(event.get("type", "event"))
+                                    )}
                                     key={str(index)}
                                 >
                                     <span
@@ -516,7 +706,7 @@ def:pub Dashboard() -> JsxElement {
                                     ></span>
                                     <div className="event-content">
                                         <div className="event-title-row">
-                                            <strong>{_event_title(event)}</strong>
+                                            <strong>{event_title(str(event.get("type", "EVENT")))}</strong>
                                             {event.get("timestamp")
                                                 and <time>
                                                     {str(event.get("timestamp"))}
@@ -542,11 +732,11 @@ def:pub Dashboard() -> JsxElement {
                             {for (index, recovery) in enumerate(recoveries) {
                                 <div className="recovery-record" key={str(index)}>
                                     <strong>
-                                        {str(recovery.get("strategy", "Recovery"))}
+                                        {recovery_record_heading(
+                                            str(recovery.get("strategy", "Recovery")),
+                                            str(recovery.get("status", "UNKNOWN")),
+                                        )}
                                     </strong>
-                                    <span>
-                                        {str(recovery.get("status", "UNKNOWN"))}
-                                    </span>
                                     <p>{str(recovery.get("reason", ""))}</p>
                                 </div>
                             }}
@@ -602,9 +792,7 @@ def:pub Dashboard() -> JsxElement {
             </section>
             <footer className="footer-note">
                 <span className="footer-indicator"></span>
-                {has_active_run
-                    and "Run data is from the backend response"
-                    or "Ready to connect to the backend"}
+                {footer_connection_note(has_active_run)}
             </footer>
         </main>;
 }
