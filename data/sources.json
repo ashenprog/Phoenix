@@ -1,0 +1,28 @@
+{
+  "sources": [
+    {
+      "source_id": "fixture-primary-1",
+      "title": "[FIXTURE] Primary source on agent reliability",
+      "url": "fixture://phoenix/demo/primary-1",
+      "excerpt": "Simulated excerpt: teams use checkpoints and bounded retries for multi-step agents.",
+      "topic_tags": ["reliability", "agents", "demo"],
+      "tier": "primary"
+    },
+    {
+      "source_id": "fixture-primary-2",
+      "title": "[FIXTURE] Primary source on workflow recovery",
+      "url": "fixture://phoenix/demo/primary-2",
+      "excerpt": "Simulated excerpt: fallback tools should be pre-approved and verified before resume.",
+      "topic_tags": ["recovery", "demo"],
+      "tier": "primary"
+    },
+    {
+      "source_id": "fixture-backup-1",
+      "title": "[FIXTURE] Backup source on resilient research runs",
+      "url": "fixture://phoenix/demo/backup-1",
+      "excerpt": "Simulated excerpt: backup retrieval uses the same fixture dataset with alternate ids.",
+      "topic_tags": ["backup", "demo"],
+      "tier": "backup"
+    }
+  ]
+}
