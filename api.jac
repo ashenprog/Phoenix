@@ -5,6 +5,7 @@ import from engine {
     pause_run_state,
     resume_run_state,
 }
+import from recovery { run_reliability_benchmark }
 import from models {
     RecoveryStatus,
     RunStatus,
@@ -154,6 +155,9 @@ def:pub get_metrics -> dict[str, any] {
             }
         }
     }
+    bench = run_reliability_benchmark();
+    baseline_completed = int(bench["baseline_completed"]);
+    phoenix_completed = int(bench["phoenix_completed"]);
     return {
         "total_runs": total,
         "completed_runs": completed,
@@ -161,8 +165,8 @@ def:pub get_metrics -> dict[str, any] {
         "recoveries_verified": verified,
         "average_latency_ms": None,
         "baseline_vs_phoenix": {
-            "baseline_completed": 0,
-            "phoenix_completed": completed,
+            "baseline_completed": baseline_completed,
+            "phoenix_completed": phoenix_completed,
         },
     };
 }
