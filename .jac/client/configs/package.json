@@ -1,7 +1,7 @@
 {
-  "name": "Phoenix",
+  "name": "phoenix",
   "version": "0.1.0",
-  "description": "",
+  "description": "PHOENIX reliability demo \u2014 multi-step research workflow with recovery",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -9,6 +9,19 @@
     "dev": "vite dev --config .jac/client/configs/vite.config.js",
     "preview": "vite preview --config .jac/client/configs/vite.config.js"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^6.22.0",
+    "react-error-boundary": "^5.0.0",
+    "@tanstack/react-form": "^1.33.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "vite": "^6.4.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.3.3",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0"
+  }
 }

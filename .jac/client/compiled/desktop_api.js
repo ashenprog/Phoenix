@@ -1,5 +1,31 @@
+import { _jac } from "@jac/prelude";
 async function _invoke(plugin, command, args) {
-  return await globalThis.__jac.invoke(plugin, command, args);
+  let resp;
+  let raw;
+  let parsed;
+  let msg;
+  let broker = globalThis.__JAC_BROKER__;
+  if (broker) {
+    resp = await fetch(`${broker}/invoke`, {"method": "POST", "headers": {"Content-Type": "application/json"}, "body": JSON.stringify([plugin, command, args])});
+    raw = await resp.text();
+    parsed = JSON.parse(raw);
+    if (parsed["ok"]) {
+      return parsed["data"];
+    }
+    msg = "desktop invoke failed";
+    try {
+      msg = String(parsed["error"]["message"]);
+    } catch (__jac_e) {
+      if (_jac.exc.matches(__jac_e, "Exception")) {} else {
+        throw __jac_e;
+      }
+    }
+    throw new _jac.exc.Exception(msg);
+  }
+  if ((globalThis.__jac && globalThis.__jac.invoke)) {
+    return await globalThis.__jac.invoke(plugin, command, args);
+  }
+  throw new _jac.exc.Exception("@jac/desktop: no broker (/__jac) and window.__jac.invoke is missing");
 }
 class fs {
   static async read_file(path, encoding = "utf-8") {
