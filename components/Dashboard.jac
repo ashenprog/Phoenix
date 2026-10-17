@@ -1,46 +1,12 @@
-sv import from ..api { start_run, get_run, advance_run }
+sv import from ..api { start_run, get_run, advance_run, get_run_graph, get_metrics }
 import from "@jac/runtime" { __jacClearCache }
+import from .ChaosLab { ChaosLab }
+import from .ExecutionGraph { ExecutionGraph }
+import from .Metrics { Metrics }
+import from .RecoveryTimeline { RecoveryTimeline }
 
 glob _request_in_flight: bool = False;
 glob _active_run_id: str = "";
-
-def _event_title(event: dict[str, any]) -> str {
-    event_type = str(event.get("type", "EVENT"));
-    if event_type == "STEP_STARTED" {
-        return "Step started";
-    }
-    if event_type == "STEP_COMPLETED" {
-        return "Step completed";
-    }
-    if event_type == "TOOL_EXECUTED" {
-        return "Tool executed";
-    }
-    if event_type == "FAILURE" {
-        return "Failure detected";
-    }
-    if event_type == "STRATEGY_SELECTED" {
-        return "Recovery strategy selected";
-    }
-    if event_type == "RECOVERY_STARTED" {
-        return "Recovery started";
-    }
-    if event_type == "RECOVERY_VERIFIED" {
-        return "Recovery verified";
-    }
-    if event_type == "RUN_RESUMED" {
-        return "Run resumed";
-    }
-    if event_type == "RUN_PAUSED" {
-        return "Run paused";
-    }
-    if event_type == "NEEDS_HUMAN" {
-        return "Human action required";
-    }
-    if event_type == "RUN_COMPLETED" {
-        return "Run completed";
-    }
-    return event_type.replace("_", " ").lower().capitalize();
-}
 
 def _readable_diagnostic(message: str) -> str {
     if message == "run_not_found" {
@@ -65,15 +31,104 @@ def:pub Dashboard() -> JsxElement {
     has prompt: str = "";
     has scenario: str = "NORMAL";
     has run_state: dict[str, any] | None = None;
-    has request_busy: bool = False;
+    has graph_data: dict[str, any] | None = None;
+    has graph_error: str = "";
+    has metrics_data: dict[str, any] | None = None;
+    has metrics_error: str = "";
+    has metrics_loading: bool = True;
+    has request_busy: bool = True;
     has api_error: str = "";
 
     def handle_prompt_change(e: ChangeEvent) {
         prompt = e.target.value;
     }
 
-    def handle_scenario_change(e: ChangeEvent) {
-        scenario = e.target.value;
+    def handle_scenario_change(value: str) {
+        scenario = value;
+    }
+
+    async def refresh_graph(run_id: str) {
+        graph_data = None;
+        __jacClearCache();
+        response = await get_run_graph(run_id);
+        if not bool(response.get("ok", True)) {
+            graph_data = None;
+            graph_error = _readable_diagnostic(
+                str(response.get("error", "The server could not load the workflow graph."))
+            );
+        } else {
+            graph_data = response;
+            graph_error = "";
+        }
+    }
+
+    async def refresh_metrics_data() {
+        __jacClearCache();
+        response = await get_metrics();
+        if not bool(response.get("ok", True)) {
+            metrics_error = _readable_diagnostic(
+                str(response.get("error", "The server could not load run metrics."))
+            );
+        } else {
+            metrics_data = response;
+            metrics_error = "";
+        }
+    }
+
+    async def refresh_auxiliary_data(run_id: str) {
+        try {
+            await refresh_graph(run_id);
+        } except Exception as err {
+            graph_error = _readable_diagnostic(
+                f"Could not load the workflow graph: {str(err)}"
+            );
+        }
+        try {
+            await refresh_metrics_data();
+        } except Exception as err {
+            metrics_error = _readable_diagnostic(
+                f"Could not load run metrics: {str(err)}"
+            );
+        }
+    }
+
+    async can with entry {
+        if not _request_in_flight {
+            _request_in_flight = True;
+            metrics_loading = True;
+            request_busy = True;
+            try {
+                await refresh_metrics_data();
+            } except Exception as err {
+                metrics_error = _readable_diagnostic(
+                    f"Could not load run metrics: {str(err)}"
+                );
+            } finally {
+                _request_in_flight = False;
+                metrics_loading = False;
+                request_busy = False;
+            }
+        }
+    }
+
+    async def handle_metrics_refresh() -> None {
+        if _request_in_flight {
+            return;
+        }
+        _request_in_flight = True;
+        request_busy = True;
+        metrics_loading = True;
+        try {
+            await refresh_metrics_data();
+        } except Exception as err {
+            metrics_error = _readable_diagnostic(
+                f"Could not load run metrics: {str(err)}"
+            );
+        } finally {
+            _request_in_flight = False;
+            request_busy = False;
+            metrics_loading = False;
+        }
     }
 
     async def handle_start() -> None {
@@ -103,6 +158,9 @@ def:pub Dashboard() -> JsxElement {
                 } else {
                     _active_run_id = run_id;
                     run_state = response;
+                    graph_data = None;
+                    graph_error = "";
+                    await refresh_auxiliary_data(run_id);
                 }
             }
         } except Exception as err {
@@ -132,6 +190,7 @@ def:pub Dashboard() -> JsxElement {
                 );
             } else {
                 run_state = response;
+                await refresh_auxiliary_data(run_id);
             }
         } except Exception as err {
             api_error = _readable_diagnostic(
@@ -160,6 +219,7 @@ def:pub Dashboard() -> JsxElement {
                 );
             } else {
                 run_state = response;
+                await refresh_auxiliary_data(run_id);
             }
         } except Exception as err {
             api_error = _readable_diagnostic(
@@ -188,6 +248,22 @@ def:pub Dashboard() -> JsxElement {
     findings: list[str] = [];
     recommendations: list[str] = [];
     source_ids: list[str] = [];
+    graph_nodes: list[dict[str, any]] = [];
+    graph_edges: list[dict[str, any]] = [];
+    if graph_data is not None {
+        graph_nodes_data = graph_data.get("nodes", []);
+        if isinstance(graph_nodes_data, list) {
+            for graph_node_data in graph_nodes_data {
+                graph_nodes.append(graph_node_data as dict[str, any]);
+            }
+        }
+        graph_edges_data = graph_data.get("edges", []);
+        if isinstance(graph_edges_data, list) {
+            for graph_edge_data in graph_edges_data {
+                graph_edges.append(graph_edge_data as dict[str, any]);
+            }
+        }
+    }
     has_report = False;
     if run_state is not None {
         status = str(run_state.get("status", "UNKNOWN"));
@@ -301,21 +377,7 @@ def:pub Dashboard() -> JsxElement {
                     rows={3}
                 />
                 <div className="form-actions">
-                    <div className="scenario-field">
-                        <label className="field-label" htmlFor="scenario-select">Test scenario</label>
-                        <select
-                            id="scenario-select"
-                            className="scenario-select"
-                            value={scenario}
-                            onChange={handle_scenario_change}
-                        >
-                            <option value="NORMAL">Normal run</option>
-                            <option value="PRIMARY_503">Simulated API 503</option>
-                            <option value="TEMP_TIMEOUT">Simulated timeout</option>
-                            <option value="INVALID_OUTPUT">Simulated invalid output</option>
-                            <option value="PERMISSION_DENIED">Simulated permission denied</option>
-                        </select>
-                    </div>
+                    <ChaosLab scenario={scenario} onScenarioChange={handle_scenario_change} />
                     <button className="start-button" type="button" disabled={request_busy or len(prompt.strip()) == 0} onClick={handle_start}>
                         <span aria-hidden="true">▶</span>
                         {request_busy and "Working..." or "Start run"}
@@ -360,91 +422,24 @@ def:pub Dashboard() -> JsxElement {
                 </div>}
             </article>
 
-            <article className="panel metrics-panel">
-                <div className="panel-heading">
-                    <div>
-                        <p className="eyebrow">RECORDED RESULTS</p>
-                        <h2>Run metrics</h2>
-                    </div>
-                    <span className="metric-icon" aria-hidden="true">↗</span>
-                </div>
-                <p className="metrics-empty">No test runs yet</p>
-                <p className="muted-copy">Metrics will use recorded runs only.</p>
-            </article>
+            <Metrics
+                metrics={metrics_data}
+                error={metrics_error}
+                loading={metrics_loading}
+                onRefresh={handle_metrics_refresh}
+            />
         </section>
 
-        <section className="panel graph-panel" aria-labelledby="workflow-title">
-            <div className="panel-heading">
-                <div>
-                    <p className="eyebrow">EXECUTION VIEW</p>
-                    <h2 id="workflow-title">Workflow graph</h2>
-                </div>
-                <span className="graph-caption">{has_active_run and f"Run {run_id_label}" or "Workflow structure"}</span>
-            </div>
-            <div className="workflow-preview" aria-label="Backend-confirmed workflow steps">
-                {if has_active_run {
-                    for step in steps {
-                        <div className={"workflow-step step-" + str(step.get("status", "PENDING")).lower()} key={str(step.get("index", 0))}>
-                            <span>{f"{int(step.get('index', 0)) + 1:02d}"}</span>
-                            <strong>{str(step.get("name", "Step"))}</strong>
-                            <small>{str(step.get("status", "PENDING")).replace("_", " ")}</small>
-                            {step.get("error_summary") and <small className="step-error">{str(step.get("error_summary"))}</small>}
-                        </div>
-                    }
-                } else {
-                    <p className="muted-copy" key="workflow-empty">Start a run to display backend-confirmed step statuses.</p>
-                }}
-            </div>
-            {has_active_run and <p className="muted-copy graph-note">
-                Shown statuses come from the latest backend response; the browser does not change step state.
-            </p>}
-        </section>
+        <ExecutionGraph
+            nodes={graph_nodes}
+            edges={graph_edges}
+            run_id={run_id_label}
+            error={graph_error}
+            has_run={has_active_run}
+        />
 
         <section className="lower-grid" aria-label="Run details">
-            <article className="panel timeline-panel">
-                <div className="panel-heading">
-                    <div>
-                        <p className="eyebrow">AUDIT TRAIL</p>
-                        <h2>Event timeline</h2>
-                    </div>
-                    <span className="event-count">{str(len(events))} events</span>
-                </div>
-                {if len(events) == 0 {
-                    <div className="empty-state" key="timeline-empty">
-                        <span className="empty-state-mark" aria-hidden="true">↳</span>
-                        <p>{has_active_run and "No events recorded yet" or "No events to display"}</p>
-                        <span>Backend events will appear here in time order.</span>
-                    </div>
-                } else {
-                    <ol className="event-list" key="event-list">
-                        {for (index, event) in enumerate(events) {
-                            <li className={"event-item event-" + str(event.get("type", "event")).lower()} key={str(index)}>
-                                <span className="event-marker" aria-hidden="true"></span>
-                                <div className="event-content">
-                                    <div className="event-title-row">
-                                        <strong>{_event_title(event)}</strong>
-                                        {event.get("timestamp") and <time>{str(event.get("timestamp"))}</time>}
-                                    </div>
-                                    <p>{event.get("detail") and str(event.get("detail")) or str(event.get("category", ""))}</p>
-                                    {event.get("simulated") and <span className="simulated-tag">SIMULATED</span>}
-                                </div>
-                            </li>
-                        }}
-                    </ol>
-                }}
-                {if len(recoveries) > 0 {
-                    <div className="recovery-records" key="recovery-records">
-                        <h3>Recorded recovery attempts</h3>
-                        {for (index, recovery) in enumerate(recoveries) {
-                            <div className="recovery-record" key={str(index)}>
-                                <strong>{str(recovery.get("strategy", "Recovery"))}</strong>
-                                <span>{str(recovery.get("status", "UNKNOWN"))}</span>
-                                <p>{str(recovery.get("reason", ""))}</p>
-                            </div>
-                        }}
-                    </div>
-                }}
-            </article>
+            <RecoveryTimeline events={events} recoveries={recoveries} has_run={has_active_run} />
 
             <article className="panel report-panel">
                 <div className="panel-heading">

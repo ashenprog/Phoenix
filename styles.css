@@ -179,10 +179,20 @@ a:focus-visible {
     box-shadow: 0 0 12px rgb(34 197 94 / 35%);
 }
 
-.run-status.status-stopped .status-dot,
-.run-status.status-needs_human .status-dot {
+.run-status.status-stopped .status-dot {
     background: var(--failure);
     box-shadow: 0 0 12px rgb(239 68 68 / 35%);
+}
+
+.run-status.status-needs_human {
+    border-color: rgb(192 132 252 / 45%);
+    background: rgb(88 28 135 / 20%);
+    color: #e9d5ff;
+}
+
+.run-status.status-needs_human .status-dot {
+    background: #c084fc;
+    box-shadow: 0 0 12px rgb(192 132 252 / 35%);
 }
 
 .status-dot-muted {
@@ -285,6 +295,13 @@ a:focus-visible {
     min-height: 41px;
     padding: 0 36px 0 11px;
     color: #e2e8f0;
+}
+
+.scenario-note {
+    margin: 7px 0 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.45;
 }
 
 .start-button {
@@ -428,13 +445,6 @@ a:focus-visible {
     color: #cbd5e1;
 }
 
-.metrics-empty {
-    margin: 24px 0 0;
-    color: #d5dbea;
-    font-size: 14px;
-    font-weight: 600;
-}
-
 .graph-panel {
     margin-top: 16px;
 }
@@ -445,74 +455,106 @@ a:focus-visible {
     text-align: right;
 }
 
-.workflow-preview {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 25px 4px 12px;
+.graph-layout {
+    display: grid;
+    gap: 18px;
+    padding-top: 20px;
 }
 
-.workflow-step {
-    min-width: 112px;
-    min-height: 66px;
+.graph-nodes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    gap: 10px;
+}
+
+.graph-node {
+    min-width: 0;
     display: flex;
-    flex: 1 1 0;
     flex-direction: column;
-    justify-content: center;
     gap: 7px;
-    padding: 10px 12px;
+    padding: 13px;
     border: 1px solid #34415b;
     border-radius: 9px;
     background: #111a2c;
+    overflow-wrap: anywhere;
 }
 
-.workflow-step span {
-    color: #b3bfd2;
+.graph-node-kind {
+    color: #aab5c9;
     font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
+    font-weight: 750;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
 }
 
-.workflow-step strong {
+.graph-node strong {
     color: #edf1f7;
     font-size: 12px;
-    font-weight: 620;
-}
-
-.workflow-step small {
-    color: #cbd5e1;
-    font-size: 9px;
     font-weight: 650;
-    letter-spacing: 0.04em;
 }
 
-.workflow-step.step-completed {
+.graph-node small {
+    color: #cbd5e1;
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.graph-state-completed,
+.graph-state-verified {
     border-color: rgb(34 197 94 / 62%);
     background: rgb(20 83 45 / 20%);
 }
 
-.workflow-step.step-running {
+.graph-state-running {
     border-color: rgb(96 165 250 / 72%);
     background: rgb(30 64 175 / 18%);
 }
 
-.workflow-step.step-failed {
+.graph-state-failed,
+.graph-node-failure {
     border-color: rgb(239 68 68 / 72%);
     background: rgb(127 29 29 / 22%);
 }
 
-.workflow-step.step-error {
-    color: #fecaca;
-    font-weight: 500;
-    letter-spacing: 0;
+.graph-node-recovery {
+    border-color: rgb(249 115 22 / 65%);
+    background: rgb(124 45 18 / 20%);
 }
 
-.workflow-connector {
-    width: 18px;
-    height: 1px;
-    flex: 0 0 18px;
-    background: #66748a;
+.graph-edges {
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+
+.graph-edges h3 {
+    margin: 0 0 10px;
+    color: #bdc8da;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.graph-edges ol {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.graph-edges li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    color: #e2e8f0;
+    font-size: 11px;
+}
+
+.graph-edge-arrow {
+    color: var(--accent);
+    font-weight: 750;
 }
 
 .graph-note {
@@ -631,6 +673,11 @@ a:focus-visible {
     overflow-wrap: anywhere;
 }
 
+.timeline-note {
+    margin: 7px 0 0;
+    font-size: 10px;
+}
+
 .event-content p,
 .recovery-record p {
     margin: 4px 0 0;
@@ -674,6 +721,15 @@ a:focus-visible {
     border-bottom: 1px solid rgb(148 163 184 / 13%);
 }
 
+.recovery-state-verified strong {
+    color: #86efac;
+}
+
+.recovery-state-failed strong,
+.recovery-state-exhausted strong {
+    color: #fca5a5;
+}
+
 .recovery-record strong {
     color: #fed7aa;
     font-size: 11px;
@@ -683,6 +739,46 @@ a:focus-visible {
     float: right;
     color: #cbd5e1;
     font-size: 9px;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+    margin: 18px 0 0;
+}
+
+.metric-tile {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #111a2c;
+}
+
+.metric-tile dt {
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.metric-tile dd {
+    margin: 7px 0 0;
+    color: #f1f5f9;
+    font-size: 16px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.metric-comparison {
+    grid-column: 1 / -1;
+}
+
+.metrics-empty-state {
+    min-height: 90px;
+}
+
+.metrics-refresh {
+    margin-top: 12px;
 }
 
 .report-content {
@@ -757,16 +853,6 @@ a:focus-visible {
         padding-left: 28px;
     }
 
-    .workflow-step {
-        min-width: 86px;
-        padding-right: 8px;
-        padding-left: 8px;
-    }
-
-    .workflow-connector {
-        width: 10px;
-        flex-basis: 10px;
-    }
 }
 
 @media (max-width: 680px) {
@@ -823,32 +909,13 @@ a:focus-visible {
         margin-top: 12px;
     }
 
-    .workflow-preview {
-        align-items: stretch;
-        flex-direction: column;
-        gap: 7px;
-        padding-top: 18px;
-    }
-
-    .workflow-step {
-        min-height: 52px;
-        flex: initial;
-        flex-direction: row;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 11px;
-    }
-
-    .workflow-connector {
-        width: 1px;
-        height: 9px;
-        flex: 0 0 9px;
-        margin-left: 17px;
-    }
-
     .graph-caption {
         max-width: 130px;
         line-height: 1.4;
+    }
+
+    .graph-nodes {
+        grid-template-columns: 1fr;
     }
 }
 
