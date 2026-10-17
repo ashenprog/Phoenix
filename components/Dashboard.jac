@@ -1,23 +1,34 @@
 import from .graph_helpers {
     advance_button_disabled,
+    average_latency_label,
+    checkpoint_summary,
     connection_label,
     demo_ready_message,
+    fixture_for_id,
     footer_connection_note,
+    policy_snapshot,
     progress_caption,
     progress_percent,
     readable_diagnostic,
     refresh_button_label,
+    repair_diff_from_events,
     rpc_error_message,
     rpc_response_failed,
     rpc_unwrap_payload,
     run_is_terminal,
+    scenario_label,
+    step_durations_from_events,
 }
 import from ..api {
     advance_run,
+    get_fixture_sources,
     get_metrics,
     get_run,
     get_run_graph,
+    human_decision,
+    list_runs,
     pause_run,
+    reset_demo,
     resume_run,
     start_run,
 }
@@ -57,6 +68,27 @@ def _recovery_demo_done(state: dict[str, any]) -> bool {
     return False;
 }
 
+def _run_has_failure(state: dict[str, any]) -> bool {
+    events = state.get("events", []);
+    if not isinstance(events, list) {
+        return False;
+    }
+    for ev in events {
+        if isinstance(ev, dict) and ev.get("type") == "FAILURE" {
+            return True;
+        }
+    }
+    steps_data = state.get("steps", []);
+    if isinstance(steps_data, list) {
+        for step in steps_data {
+            if isinstance(step, dict) and step.get("status") == "FAILED" {
+                return True;
+            }
+        }
+    }
+    return False;
+}
+
 def:pub Dashboard() -> JsxElement {
     has prompt: str = "";
     has scenario: str = "NORMAL";
@@ -69,6 +101,11 @@ def:pub Dashboard() -> JsxElement {
     has metrics_loading: bool = True;
     has request_busy: bool = True;
     has api_error: str = "";
+    has demo_paused: bool = False;
+    has run_history: list[dict[str, any]] = [];
+    has fixture_sources: list[dict[str, any]] = [];
+    has presenter_mode: bool = False;
+    has source_drawer_id: str = "";
 
     def handle_prompt_change(e: ChangeEvent) {
         prompt = e.target.value;
@@ -107,6 +144,34 @@ def:pub Dashboard() -> JsxElement {
         }
     }
 
+    async def refresh_run_history() {
+        try {
+            response = await list_runs();
+            if isinstance(response, list) {
+                run_history = [];
+                for item in response {
+                    run_history.append(item as dict[str, any]);
+                }
+            }
+        } except Exception as err {
+            _ = err;
+        }
+    }
+
+    async def refresh_fixture_sources() {
+        try {
+            response = await get_fixture_sources();
+            if isinstance(response, list) {
+                fixture_sources = [];
+                for item in response {
+                    fixture_sources.append(item as dict[str, any]);
+                }
+            }
+        } except Exception as err {
+            _ = err;
+        }
+    }
+
     async def refresh_auxiliary_data(run_id: str) {
         try {
             await refresh_graph(run_id);
@@ -122,6 +187,7 @@ def:pub Dashboard() -> JsxElement {
                 f"Could not load run metrics: {str(err)}"
             );
         }
+        await refresh_run_history();
     }
 
     async can with entry {
@@ -131,6 +197,8 @@ def:pub Dashboard() -> JsxElement {
             request_busy = True;
             try {
                 await refresh_metrics_data();
+                await refresh_fixture_sources();
+                await refresh_run_history();
             } except Exception as err {
                 metrics_error = readable_diagnostic(
                     f"Could not load run metrics: {str(err)}"
@@ -139,6 +207,136 @@ def:pub Dashboard() -> JsxElement {
                 _request_in_flight = False;
                 metrics_loading = False;
                 request_busy = False;
+            }
+        }
+    }
+
+    def handle_presenter_toggle(_e: MouseEvent) {
+        presenter_mode = not presenter_mode;
+    }
+
+    async def handle_load_run(run_id: str) {
+        if _request_in_flight or len(run_id) == 0 {
+            return;
+        }
+        _request_in_flight = True;
+        request_busy = True;
+        api_error = "";
+        try {
+            __jacClearCache();
+            response = await get_run(run_id);
+            if rpc_response_failed(response) {
+                api_error = readable_diagnostic(rpc_error_message(response));
+            } else {
+                _active_run_id = run_id;
+                run_state = rpc_unwrap_payload(response);
+                demo_paused = False;
+                await refresh_auxiliary_data(run_id);
+            }
+        } except Exception as err {
+            api_error = readable_diagnostic(f"Could not load run: {str(err)}");
+        } finally {
+            _request_in_flight = False;
+            request_busy = False;
+        }
+    }
+
+    async def handle_reset_demo() {
+        if _request_in_flight {
+            return;
+        }
+        _request_in_flight = True;
+        request_busy = True;
+        api_error = "";
+        try {
+            __jacClearCache();
+            response = await reset_demo("session_runs");
+            if isinstance(response, dict) and response.get("ok") == False {
+                api_error = "Could not reset demo session.";
+            } else {
+                _active_run_id = "";
+                run_state = None;
+                graph_data = None;
+                demo_paused = False;
+                await refresh_metrics_data();
+                await refresh_run_history();
+            }
+        } except Exception as err {
+            api_error = readable_diagnostic(f"Could not reset demo: {str(err)}");
+        } finally {
+            _request_in_flight = False;
+            request_busy = False;
+        }
+    }
+
+    async def handle_human_approve() {
+        if _request_in_flight or len(_active_run_id) == 0 {
+            return;
+        }
+        _request_in_flight = True;
+        request_busy = True;
+        run_id = _active_run_id;
+        try {
+            response = await human_decision(run_id, True);
+            if rpc_response_failed(response) {
+                api_error = readable_diagnostic(rpc_error_message(response));
+            } else {
+                run_state = rpc_unwrap_payload(response);
+                await refresh_auxiliary_data(run_id);
+            }
+        } finally {
+            _request_in_flight = False;
+            request_busy = False;
+        }
+    }
+
+    async def handle_human_deny() {
+        if _request_in_flight or len(_active_run_id) == 0 {
+            return;
+        }
+        _request_in_flight = True;
+        request_busy = True;
+        run_id = _active_run_id;
+        try {
+            response = await human_decision(run_id, False);
+            if rpc_response_failed(response) {
+                api_error = readable_diagnostic(rpc_error_message(response));
+            } else {
+                run_state = rpc_unwrap_payload(response);
+                await refresh_auxiliary_data(run_id);
+            }
+        } finally {
+            _request_in_flight = False;
+            request_busy = False;
+        }
+    }
+
+    async def _advance_demo_until_done(run_id: str, stop_on_failure: bool) -> None {
+        demo_state = run_state if run_state is not None else {"steps": [], "recoveries": [], "events": []};
+        for _ in range(8) {
+            if _recovery_demo_done(demo_state) {
+                demo_paused = False;
+                break;
+            }
+            adv = await advance_run(run_id);
+            if rpc_response_failed(adv) {
+                api_error = readable_diagnostic(rpc_error_message(adv));
+                break;
+            }
+            demo_state = rpc_unwrap_payload(adv);
+            run_state = demo_state;
+            demo_status = str(demo_state.get("status", ""));
+            if demo_status == "COMPLETED" {
+                demo_paused = False;
+                break;
+            }
+            if stop_on_failure and (
+                demo_status == "RECOVERING"
+                or demo_status == "NEEDS_HUMAN"
+                or _run_has_failure(demo_state)
+            ) {
+                demo_paused = True;
+                break;
             }
         }
     }
@@ -320,22 +518,8 @@ def:pub Dashboard() -> JsxElement {
             }
             _active_run_id = run_id;
             run_state = state;
-            demo_state = state;
-            for _ in range(8) {
-                if _recovery_demo_done(demo_state) {
-                    break;
-                }
-                adv = await advance_run(run_id);
-                if rpc_response_failed(adv) {
-                    api_error = readable_diagnostic(rpc_error_message(adv));
-                    break;
-                }
-                demo_state = rpc_unwrap_payload(adv);
-                run_state = demo_state;
-                if demo_state.get("status") == "COMPLETED" {
-                    break;
-                }
-            }
+            demo_paused = False;
+            await _advance_demo_until_done(run_id, True);
             graph_data = None;
             graph_error = "";
             await refresh_auxiliary_data(run_id);
@@ -346,6 +530,48 @@ def:pub Dashboard() -> JsxElement {
         } finally {
             _request_in_flight = False;
             request_busy = False;
+        }
+    }
+
+    async def handle_continue_demo() {
+        if _request_in_flight or len(_active_run_id) == 0 {
+            return;
+        }
+        _request_in_flight = True;
+        request_busy = True;
+        run_id = _active_run_id;
+        try {
+            demo_paused = False;
+            await _advance_demo_until_done(run_id, False);
+            await refresh_auxiliary_data(run_id);
+        } finally {
+            _request_in_flight = False;
+            request_busy = False;
+        }
+    }
+
+    async def handle_history_select(e: ChangeEvent) {
+        run_id = str(e.target.value);
+        if len(run_id) > 0 {
+            await handle_load_run(run_id);
+        }
+    }
+
+    def handle_source_select_change(e: ChangeEvent) {
+        source_drawer_id = str(e.target.value);
+    }
+
+    async def handle_refresh_history_click(_e: MouseEvent) {
+        await refresh_run_history();
+    }
+
+    async def handle_keydown(e: KeyboardEvent) {
+        if not presenter_mode {
+            return;
+        }
+        key = e.key;
+        if key == "n" or key == "N" {
+            await handle_advance();
         }
     }
 
@@ -447,18 +673,53 @@ def:pub Dashboard() -> JsxElement {
     if run_state is not None {
         demo_done = _recovery_demo_done(run_state);
     }
+    policy_data: dict[str, any] | None = None;
+    repair_diff_data: dict[str, any] | None = None;
+    step_timings: list[dict[str, any]] = [];
+    checkpoint_text = "";
+    avg_latency_note = "";
+    selected_fixture: dict[str, any] | None = None;
+    if run_state is not None {
+        policy_data = policy_snapshot(run_state);
+        repair_diff_data = repair_diff_from_events(events);
+        step_timings = step_durations_from_events(events);
+        checkpoint_text = checkpoint_summary(run_state);
+    }
+    if metrics_data is not None {
+        latency_raw = metrics_data.get("average_latency_ms");
+        ms_val: int | None = None;
+        if latency_raw is not None and str(latency_raw) != "None" {
+            ms_val = int(latency_raw);
+        }
+        avg_latency_note = average_latency_label(ms_val);
+    }
+    if len(source_drawer_id) > 0 {
+        selected_fixture = fixture_for_id(fixture_sources, source_drawer_id);
+    }
+    app_class = "phoenix-app";
+    if presenter_mode {
+        app_class = "phoenix-app presenter-mode";
+    }
 
-    return <main className="phoenix-app">
+    return <main className={app_class} tabIndex={0} onKeyDown={handle_keydown}>
         <header className="topbar">
             <a className="brand" href="#" aria-label="Phoenix home">
                 <span className="brand-mark" aria-hidden="true">P</span>
                 <span>PHOENIX</span>
             </a>
             <div className="topbar-meta">
+                <button className="secondary-button presenter-toggle" type="button" onClick={handle_presenter_toggle}>
+                    {presenter_mode and "Exit presenter mode" or "Presenter mode"}
+                </button>
                 <span className="environment-pill"><span className="status-dot"></span>Local workspace</span>
                 <span className="connection-state">{connection_label(has_active_run)}</span>
             </div>
         </header>
+        {presenter_mode and has_active_run and <section className="presenter-strip" aria-live="polite">
+            <strong>{status.replace("_", " ")}</strong>
+            <span>{progress_caption(current_step, status)}</span>
+            <span className="presenter-hint">Press N to advance one step</span>
+        </section>}
 
         <section className="welcome-row" aria-labelledby="page-title">
             <div>
@@ -499,12 +760,56 @@ def:pub Dashboard() -> JsxElement {
                     <button className="demo-button" type="button" disabled={request_busy} onClick={handle_play_503}>
                         Play 503 recovery
                     </button>
+                    {demo_paused and <button className="advance-button" type="button" disabled={request_busy} onClick={handle_continue_demo}>
+                        Continue demo
+                    </button>}
+                    <button className="secondary-button" type="button" disabled={request_busy} onClick={handle_reset_demo}>
+                        Reset demo
+                    </button>
                 </div>
                 {api_error and not has_active_run and <p className="form-error" role="alert">{api_error}</p>}
                 {not api_error and <p className="form-note" role="status">
-                    {demo_ready_message(demo_done)}
+                    {demo_paused
+                        and "Demo paused on the first simulated failure. Click Continue demo to finish recovery."
+                        or demo_ready_message(demo_done)}
                 </p>}
             </div>
+        </section>
+
+        <section className="panel run-history-panel" aria-labelledby="run-history-title">
+            <div className="panel-heading">
+                <div>
+                    <p className="eyebrow">SESSION</p>
+                    <h2 id="run-history-title">Run history</h2>
+                </div>
+                <button className="secondary-button" type="button" disabled={request_busy} onClick={handle_refresh_history_click}>
+                    Refresh list
+                </button>
+            </div>
+            {if len(run_history) == 0 {
+                <p className="muted-copy">No recorded runs yet.</p>
+            } else {
+                <label className="field-label" htmlFor="run-history-select">Load a recorded run</label>
+                <select
+                    id="run-history-select"
+                    className="scenario-select"
+                    disabled={request_busy}
+                    onChange={handle_history_select}
+                >
+                    <option value="">Select run…</option>
+                    {for (index, hist) in enumerate(run_history) {
+                        hist_id = str(hist.get("run_id", ""));
+                        label = (
+                            str(hist.get("prompt", "Run"))[:40]
+                            + " · "
+                            + scenario_label(str(hist.get("scenario", "NORMAL")))
+                            + " · "
+                            + str(hist.get("status", ""))
+                        );
+                        <option value={hist_id} key={str(index)}>{label}</option>
+                    }}
+                </select>
+            }}
         </section>
 
         <section className="overview-grid" aria-label="Run overview">
@@ -528,7 +833,21 @@ def:pub Dashboard() -> JsxElement {
                 <p className="muted-copy">
                     {has_active_run and progress_caption(current_step, status) or "Run progress will appear here after a task starts."}
                 </p>
+                {has_active_run and len(checkpoint_text) > 0 and <p className="checkpoint-viewer">{checkpoint_text}</p>}
+                {len(step_timings) > 0 and <ul className="step-timing-list">
+                    {for timing in step_timings {
+                        <li key={str(timing.get("step_index", 0))}>
+                            {str(timing.get("label", "Step"))}: recorded start → complete
+                        </li>
+                    }}
+                </ul>}
+                {len(avg_latency_note) > 0 and <p className="muted-copy">{avg_latency_note}</p>}
                 {api_error and has_active_run and <p className="form-error" role="alert">{api_error}</p>}
+                {status == "NEEDS_HUMAN" and <div className="human-gate">
+                    <p>Permission denied — approve backup retrieve or deny to stop.</p>
+                    <button className="advance-button" type="button" disabled={request_busy} onClick={handle_human_approve}>Approve</button>
+                    <button className="secondary-button" type="button" disabled={request_busy} onClick={handle_human_deny}>Deny</button>
+                </div>}
                 {has_active_run and <div className="run-actions">
                     {request_busy and <p className="request-feedback" role="status" aria-live="polite">Waiting for the backend response…</p>}
                     <button className="secondary-button" type="button" disabled={request_busy} onClick={handle_refresh}>
@@ -568,7 +887,13 @@ def:pub Dashboard() -> JsxElement {
         />
 
         <section className="lower-grid" aria-label="Run details">
-            <RecoveryTimeline events={events} recoveries={recoveries} has_run={has_active_run} />
+            <RecoveryTimeline
+                events={events}
+                recoveries={recoveries}
+                has_run={has_active_run}
+                policy={policy_data}
+                repair_diff={repair_diff_data}
+            />
 
             <article className="panel report-panel">
                 <div className="panel-heading">
@@ -591,7 +916,23 @@ def:pub Dashboard() -> JsxElement {
                             <p className="report-item" key={"recommendation-" + str(index)}>{str(recommendation)}</p>
                         }}
                         <h3>Source IDs</h3>
-                        <p className="source-ids">{", ".join(source_ids)}</p>
+                        <label className="field-label" htmlFor="source-drawer-select">Inspect fixture source</label>
+                        <select
+                            id="source-drawer-select"
+                            className="scenario-select"
+                            value={source_drawer_id}
+                            onChange={handle_source_select_change}
+                        >
+                            <option value="">Choose source ID…</option>
+                            {for (index, sid) in enumerate(source_ids) {
+                                <option value={sid} key={str(index)}>{sid}</option>
+                            }}
+                        </select>
+                        {selected_fixture is not None and <div className="source-drawer">
+                            <p><strong>{str(selected_fixture.get("title", ""))}</strong></p>
+                            <p>Tier: {str(selected_fixture.get("tier", ""))}</p>
+                            <p>{str(selected_fixture.get("excerpt", ""))}</p>
+                        </div>}
                         <span className="model-mode">{model_mode}</span>
                     </div>
                 } else {

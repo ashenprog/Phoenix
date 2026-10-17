@@ -269,3 +269,12 @@ def serialize_run(run: TaskRun) -> dict[str, any] {
 def delete_run(run: TaskRun) -> None {
     del run;
 }
+
+def reset_all_runs() -> int {
+    runs = [root -->][?:TaskRun];
+    count = len(runs);
+    for run in runs {
+        delete_run(run);
+    }
+    return count;
+}
