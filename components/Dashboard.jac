@@ -1,4 +1,4 @@
-sv import from ..api { start_run, get_run, advance_run, get_run_graph, get_metrics }
+sv import from ..api { start_run, get_run, advance_run, pause_run, resume_run, get_run_graph, get_metrics }
 import from "@jac/runtime" { __jacClearCache }
 import from .ChaosLab { ChaosLab }
 import from .ExecutionGraph { ExecutionGraph }
@@ -33,6 +33,7 @@ def:pub Dashboard() -> JsxElement {
     has run_state: dict[str, any] | None = None;
     has graph_data: dict[str, any] | None = None;
     has graph_error: str = "";
+    has graph_loading: bool = False;
     has metrics_data: dict[str, any] | None = None;
     has metrics_error: str = "";
     has metrics_loading: bool = True;
@@ -49,16 +50,21 @@ def:pub Dashboard() -> JsxElement {
 
     async def refresh_graph(run_id: str) {
         graph_data = None;
+        graph_loading = True;
         __jacClearCache();
-        response = await get_run_graph(run_id);
-        if not bool(response.get("ok", True)) {
-            graph_data = None;
-            graph_error = _readable_diagnostic(
-                str(response.get("error", "The server could not load the workflow graph."))
-            );
-        } else {
-            graph_data = response;
-            graph_error = "";
+        try {
+            response = await get_run_graph(run_id);
+            if not bool(response.get("ok", True)) {
+                graph_data = None;
+                graph_error = _readable_diagnostic(
+                    str(response.get("error", "The server could not load the workflow graph."))
+                );
+            } else {
+                graph_data = response;
+                graph_error = "";
+            }
+        } finally {
+            graph_loading = False;
         }
     }
 
@@ -229,6 +235,48 @@ def:pub Dashboard() -> JsxElement {
             _request_in_flight = False;
             request_busy = False;
         }
+    }
+
+    async def handle_run_control(resume: bool) -> None {
+        if _request_in_flight or len(_active_run_id) == 0 {
+            return;
+        }
+        _request_in_flight = True;
+        request_busy = True;
+        api_error = "";
+        run_id = _active_run_id;
+        response: dict[str, any] = {};
+        try {
+            __jacClearCache();
+            if resume {
+                response = await resume_run(run_id);
+            } else {
+                response = await pause_run(run_id);
+            }
+            if not bool(response.get("ok", True)) {
+                api_error = _readable_diagnostic(
+                    str(response.get("error", "Run not found. Check the run ID and try again."))
+                );
+            } else {
+                run_state = response;
+                await refresh_auxiliary_data(run_id);
+            }
+        } except Exception as err {
+            api_error = _readable_diagnostic(
+                f"Could not {resume and 'resume' or 'pause'} this run: {str(err)}"
+            );
+        } finally {
+            _request_in_flight = False;
+            request_busy = False;
+        }
+    }
+
+    async def handle_pause(_e: MouseEvent) {
+        await handle_run_control(False);
+    }
+
+    async def handle_resume(_e: MouseEvent) {
+        await handle_run_control(True);
     }
 
     status = "PENDING";
@@ -413,9 +461,16 @@ def:pub Dashboard() -> JsxElement {
                 </p>
                 {api_error and has_active_run and <p className="form-error" role="alert">{api_error}</p>}
                 {has_active_run and <div className="run-actions">
+                    {request_busy and <p className="request-feedback" role="status" aria-live="polite">Waiting for the backend response…</p>}
                     <button className="secondary-button" type="button" disabled={request_busy} onClick={handle_refresh}>
                         {request_busy and "Refreshing..." or (api_error and "Retry display / Refresh" or "Refresh from server")}
                     </button>
+                    {status == "PAUSED" and <button className="advance-button" type="button" disabled={request_busy} onClick={handle_resume}>
+                        {request_busy and "Resuming..." or "Resume"}
+                    </button>}
+                    {not terminal and <button className="secondary-button" type="button" disabled={request_busy} onClick={handle_pause}>
+                        {request_busy and "Pausing..." or "Pause"}
+                    </button>}
                     {not terminal and <button className="advance-button" type="button" disabled={request_busy} onClick={handle_advance}>
                         Advance one step
                     </button>}
@@ -433,8 +488,13 @@ def:pub Dashboard() -> JsxElement {
         <ExecutionGraph
             nodes={graph_nodes}
             edges={graph_edges}
+            steps={steps}
+            events={events}
+            recoveries={recoveries}
             run_id={run_id_label}
+            run_status={status}
             error={graph_error}
+            loading={graph_loading}
             has_run={has_active_run}
         />
 

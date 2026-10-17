@@ -118,6 +118,7 @@ a:focus-visible {
 
 .connection-state {
     color: #fdba74;
+    font-size: 12px;
 }
 
 .welcome-row {
@@ -131,14 +132,14 @@ a:focus-visible {
 .eyebrow {
     margin: 0 0 8px;
     color: #c0cada;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 750;
     letter-spacing: 0.13em;
 }
 
 .welcome-row h1 {
     margin: 0;
-    font-size: clamp(27px, 3vw, 35px);
+    font-size: clamp(30px, 3vw, 38px);
     font-weight: 720;
     letter-spacing: -0.04em;
 }
@@ -146,7 +147,7 @@ a:focus-visible {
 .page-description,
 .muted-copy {
     color: var(--muted);
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.6;
 }
 
@@ -160,8 +161,26 @@ a:focus-visible {
     border-radius: 999px;
     background: rgb(21 28 47 / 74%);
     color: #d5dbea;
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 700;
     white-space: nowrap;
+}
+
+.run-status.status-pending {
+    border-color: rgb(148 163 184 / 48%);
+    background: rgb(71 85 105 / 20%);
+    color: #e2e8f0;
+}
+
+.run-status.status-pending .status-dot,
+.run-status.status-paused .status-dot {
+    background: #94a3b8;
+    box-shadow: none;
+}
+
+.run-status.status-paused {
+    border-color: rgb(148 163 184 / 48%);
+    color: #e2e8f0;
 }
 
 .run-status.status-running .status-dot {
@@ -169,9 +188,21 @@ a:focus-visible {
     box-shadow: 0 0 12px rgb(96 165 250 / 35%);
 }
 
+.run-status.status-running {
+    border-color: rgb(96 165 250 / 55%);
+    background: rgb(30 64 175 / 22%);
+    color: #dbeafe;
+}
+
 .run-status.status-recovering .status-dot {
     background: var(--accent);
     box-shadow: 0 0 12px rgb(249 115 22 / 35%);
+}
+
+.run-status.status-recovering {
+    border-color: rgb(249 115 22 / 55%);
+    background: rgb(124 45 18 / 22%);
+    color: #fed7aa;
 }
 
 .run-status.status-completed .status-dot {
@@ -179,9 +210,20 @@ a:focus-visible {
     box-shadow: 0 0 12px rgb(34 197 94 / 35%);
 }
 
+.run-status.status-completed {
+    border-color: rgb(34 197 94 / 55%);
+    background: rgb(20 83 45 / 22%);
+    color: #dcfce7;
+}
 .run-status.status-stopped .status-dot {
     background: var(--failure);
     box-shadow: 0 0 12px rgb(239 68 68 / 35%);
+}
+
+.run-status.status-stopped {
+    border-color: rgb(239 68 68 / 55%);
+    background: rgb(127 29 29 / 22%);
+    color: #fecaca;
 }
 
 .run-status.status-needs_human {
@@ -224,7 +266,7 @@ a:focus-visible {
 .section-heading h2,
 .panel-heading h2 {
     margin: 0;
-    font-size: 17px;
+    font-size: 19px;
     font-weight: 650;
     letter-spacing: -0.02em;
 }
@@ -250,12 +292,11 @@ a:focus-visible {
     display: block;
     margin-bottom: 8px;
     color: #e2e8f0;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
 }
 
-.task-input,
-.scenario-select {
+.task-input {
     width: 100%;
     border: 1px solid #34415b;
     border-radius: 8px;
@@ -274,8 +315,7 @@ a:focus-visible {
     color: #8996ac;
 }
 
-.task-input:focus,
-.scenario-select:focus {
+.task-input:focus {
     border-color: var(--accent);
 }
 
@@ -288,19 +328,43 @@ a:focus-visible {
 }
 
 .scenario-field {
-    width: min(360px, 100%);
+    width: min(700px, 100%);
 }
 
-.scenario-select {
-    min-height: 41px;
-    padding: 0 36px 0 11px;
-    color: #e2e8f0;
+.scenario-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.scenario-option {
+    min-height: 40px;
+    padding: 0 13px;
+    border: 1px solid #46536b;
+    border-radius: 7px;
+    background: #111a2c;
+    color: #dbe4f1;
+    font-size: 12px;
+    font-weight: 650;
+    transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.scenario-option:hover,
+.scenario-option:focus-visible {
+    border-color: #fb923c;
+}
+
+.scenario-option-selected,
+.scenario-option-selected:hover {
+    border-color: #fb923c;
+    background: #713b1d;
+    color: #fff7ed;
 }
 
 .scenario-note {
     margin: 7px 0 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.45;
 }
 
@@ -315,7 +379,7 @@ a:focus-visible {
     border-radius: 8px;
     background: var(--accent);
     color: #1c120c;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 750;
     white-space: nowrap;
 }
@@ -330,7 +394,7 @@ a:focus-visible {
 .form-note {
     margin: 12px 0 0;
     color: #fdba74;
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .form-error {
@@ -340,7 +404,7 @@ a:focus-visible {
     border-radius: 8px;
     background: rgb(127 29 29 / 18%);
     color: #fecaca;
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.5;
 }
 
@@ -370,14 +434,14 @@ a:focus-visible {
 
 .progress-number {
     color: #f8fafc;
-    font-size: 27px;
+    font-size: 30px;
     font-weight: 700;
     letter-spacing: -0.04em;
 }
 
 .progress-copy {
     color: var(--muted);
-    font-size: 12px;
+    font-size: 13px;
 }
 
 .progress-track {
@@ -406,13 +470,13 @@ a:focus-visible {
 
 .secondary-button,
 .advance-button {
-    min-height: 34px;
-    padding: 0 11px;
+    min-height: 38px;
+    padding: 0 13px;
     border: 1px solid #45536c;
     border-radius: 7px;
     background: #202b40;
     color: #e2e8f0;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 650;
 }
 
@@ -431,7 +495,15 @@ a:focus-visible {
 .progress-panel .muted-copy,
 .metrics-panel .muted-copy {
     margin: 8px 0 0;
-    font-size: 11px;
+    font-size: 12px;
+}
+
+.request-feedback {
+    flex: 1 0 100%;
+    margin: 0;
+    color: #fdba74;
+    font-size: 12px;
+    font-weight: 650;
 }
 
 .metric-icon,
@@ -451,37 +523,95 @@ a:focus-visible {
 
 .graph-caption {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     text-align: right;
 }
 
 .graph-layout {
     display: grid;
-    gap: 18px;
-    padding-top: 20px;
+    gap: 15px;
+    padding-top: 17px;
+}
+
+.graph-status-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px 14px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.graph-status-legend span::before {
+    width: 8px;
+    height: 8px;
+    display: inline-block;
+    margin-right: 5px;
+    border-radius: 50%;
+    background: #788397;
+    content: "";
+}
+
+.graph-status-legend .legend-running::before {
+    background: #60a5fa;
+}
+
+.graph-status-legend .legend-completed::before {
+    background: var(--success);
+}
+
+.graph-status-legend .legend-failed::before {
+    background: var(--failure);
+}
+
+.graph-status-legend .legend-recovering::before {
+    background: var(--accent);
+}
+
+.graph-status-legend .legend-human::before {
+    background: #c084fc;
 }
 
 .graph-nodes {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 10px;
 }
 
 .graph-node {
+    position: relative;
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 7px;
-    padding: 13px;
-    border: 1px solid #34415b;
+    gap: 6px;
+    padding: 12px;
+    border: 1px solid #536078;
     border-radius: 9px;
     background: #111a2c;
+    color: var(--text);
+    cursor: pointer;
     overflow-wrap: anywhere;
+    transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.graph-node input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+}
+
+.graph-node:focus-within,
+.graph-node-selected {
+    outline: 2px solid #fdba74;
+    outline-offset: 2px;
 }
 
 .graph-node-kind {
     color: #aab5c9;
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 750;
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -489,36 +619,77 @@ a:focus-visible {
 
 .graph-node strong {
     color: #edf1f7;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 650;
 }
 
-.graph-node small {
+.graph-node-status {
     color: #cbd5e1;
-    font-size: 10px;
+    font-size: 12px;
+    font-weight: 750;
     line-height: 1.4;
 }
 
-.graph-state-completed,
-.graph-state-verified {
-    border-color: rgb(34 197 94 / 62%);
-    background: rgb(20 83 45 / 20%);
+.graph-node.graph-state-pending {
+    border-color: rgb(148 163 184 / 55%);
+    background: rgb(71 85 105 / 20%);
 }
 
-.graph-state-running {
-    border-color: rgb(96 165 250 / 72%);
-    background: rgb(30 64 175 / 18%);
+.graph-state-pending .graph-node-status {
+    color: #cbd5e1;
 }
 
-.graph-state-failed,
-.graph-node-failure {
-    border-color: rgb(239 68 68 / 72%);
-    background: rgb(127 29 29 / 22%);
+.graph-node.graph-state-running {
+    border-color: rgb(96 165 250 / 78%);
+    background: rgb(30 64 175 / 23%);
 }
 
-.graph-node-recovery {
-    border-color: rgb(249 115 22 / 65%);
-    background: rgb(124 45 18 / 20%);
+.graph-state-running .graph-node-status {
+    color: #93c5fd;
+}
+
+.graph-node.graph-state-completed {
+    border-color: rgb(34 197 94 / 75%);
+    background: rgb(20 83 45 / 23%);
+}
+
+.graph-state-completed .graph-node-status {
+    color: #86efac;
+}
+
+.graph-node.graph-state-failed,
+.graph-node.graph-node-failure {
+    border: 2px solid rgb(239 68 68 / 85%);
+    background: rgb(127 29 29 / 30%);
+}
+
+.graph-state-failed .graph-node-status {
+    color: #fca5a5;
+}
+
+.graph-node.graph-state-recovering {
+    border-color: rgb(249 115 22 / 78%);
+    background: rgb(124 45 18 / 24%);
+}
+
+.graph-state-recovering .graph-node-status {
+    color: #fdba74;
+}
+
+.graph-node.graph-state-needs_human {
+    border-color: rgb(192 132 252 / 82%);
+    background: rgb(88 28 135 / 28%);
+}
+
+.graph-state-needs_human .graph-node-status,
+.graph-run-state,
+.graph-detail-human {
+    color: #e9d5ff;
+}
+
+.graph-run-state {
+    font-size: 11px;
+    font-weight: 650;
 }
 
 .graph-edges {
@@ -529,7 +700,7 @@ a:focus-visible {
 .graph-edges h3 {
     margin: 0 0 10px;
     color: #bdc8da;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -537,29 +708,160 @@ a:focus-visible {
 
 .graph-edges ol {
     display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 8px;
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
-.graph-edges li {
+.graph-edges li.graph-edge {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
+    min-width: 0;
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-left: 3px solid #748198;
+    border-radius: 7px;
+    background: #111a2c;
     color: #e2e8f0;
-    font-size: 11px;
+    font-size: 12px;
+    overflow-wrap: anywhere;
 }
 
 .graph-edge-arrow {
-    color: var(--accent);
+    color: #aab5c9;
     font-weight: 750;
+}
+
+.graph-edge.graph-edge-pending {
+    border-left-color: #788397;
+}
+
+.graph-edge.graph-edge-completed {
+    border-color: rgb(34 197 94 / 45%);
+    border-left-color: var(--success);
+    background: rgb(20 83 45 / 18%);
+}
+
+.graph-edge-completed .graph-edge-arrow {
+    color: var(--success);
+}
+
+.graph-edge.graph-edge-failure {
+    border: 1px solid rgb(239 68 68 / 62%);
+    border-left: 4px solid var(--failure);
+    background: rgb(127 29 29 / 24%);
+}
+
+.graph-edge-failure .graph-edge-arrow {
+    color: #f87171;
+}
+
+.graph-edge.graph-edge-recovery {
+    border-color: rgb(249 115 22 / 55%);
+    border-left-color: var(--accent);
+    background: rgb(124 45 18 / 18%);
+}
+
+.graph-edge-recovery .graph-edge-arrow {
+    color: #fdba74;
+}
+
+.graph-edge.graph-edge-human {
+    border-color: rgb(192 132 252 / 60%);
+    border-left-color: #c084fc;
+    background: rgb(88 28 135 / 20%);
+}
+
+.graph-edge-human .graph-edge-arrow {
+    color: #c084fc;
+}
+
+.graph-node-details {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: #10182a;
+}
+
+.graph-detail-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.graph-detail-heading .eyebrow {
+    margin-bottom: 5px;
+}
+
+.graph-detail-heading h3 {
+    margin: 0;
+    color: #f1f5f9;
+    font-size: 15px;
+}
+
+.graph-detail-status {
+    flex: 0 0 auto;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 750;
+}
+
+.graph-detail-status.graph-state-pending {
+    color: #cbd5e1;
+}
+
+.graph-detail-status.graph-state-running {
+    color: #93c5fd;
+}
+
+.graph-detail-status.graph-state-completed {
+    color: #86efac;
+}
+
+.graph-detail-status.graph-state-failed {
+    color: #fca5a5;
+}
+
+.graph-detail-status.graph-state-recovering {
+    color: #fdba74;
+}
+
+.graph-detail-status.graph-state-needs_human {
+    color: #e9d5ff;
+}
+
+.graph-detail-line,
+.graph-detail-copy p {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.graph-detail-copy strong {
+    color: #e2e8f0;
+}
+
+.graph-detail-copy .graph-detail-error,
+.graph-detail-error strong {
+    color: #fca5a5;
+}
+
+.graph-detail-human {
+    font-weight: 700;
 }
 
 .graph-note {
     margin: 8px 0 0;
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .timeline-panel,
@@ -592,14 +894,14 @@ a:focus-visible {
 .report-empty p {
     margin: 9px 0 4px;
     color: #e2e8f0;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
 }
 
 .empty-state span:last-child,
 .report-empty span {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.5;
 }
 
@@ -664,25 +966,25 @@ a:focus-visible {
 
 .event-title-row strong {
     color: #e5eaf2;
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .event-title-row time {
     color: var(--subtle);
-    font-size: 9px;
+    font-size: 11px;
     overflow-wrap: anywhere;
 }
 
 .timeline-note {
     margin: 7px 0 0;
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .event-content p,
 .recovery-record p {
     margin: 4px 0 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.5;
     overflow-wrap: anywhere;
 }
@@ -695,7 +997,7 @@ a:focus-visible {
     border: 1px solid #9a5b23;
     border-radius: 4px;
     color: #fdba74;
-    font-size: 8px;
+    font-size: 10px;
     font-weight: 750;
     letter-spacing: 0.08em;
 }
@@ -710,7 +1012,7 @@ a:focus-visible {
 .report-content h3 {
     margin: 0 0 8px;
     color: #bdc8da;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -732,13 +1034,13 @@ a:focus-visible {
 
 .recovery-record strong {
     color: #fed7aa;
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .recovery-record > span {
     float: right;
     color: #cbd5e1;
-    font-size: 9px;
+    font-size: 11px;
 }
 
 .metrics-grid {
@@ -758,7 +1060,7 @@ a:focus-visible {
 
 .metric-tile dt {
     color: var(--muted);
-    font-size: 10px;
+    font-size: 12px;
 }
 
 .metric-tile dd {
@@ -796,7 +1098,7 @@ a:focus-visible {
 .report-item,
 .source-ids {
     color: #cbd5e1;
-    font-size: 11px;
+    font-size: 13px;
     line-height: 1.6;
     overflow-wrap: anywhere;
 }
@@ -837,7 +1139,7 @@ a:focus-visible {
     gap: 9px;
     padding: 20px 2px 0;
     color: #aab5c9;
-    font-size: 10px;
+    font-size: 12px;
 }
 
 .footer-indicator {
@@ -853,6 +1155,9 @@ a:focus-visible {
         padding-left: 28px;
     }
 
+    .graph-nodes {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 680px) {
@@ -915,7 +1220,7 @@ a:focus-visible {
     }
 
     .graph-nodes {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
