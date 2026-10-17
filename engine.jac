@@ -23,6 +23,8 @@ import from recovery {
 import from tools {
     check_report,
     extract_key_points,
+    grant_human_override,
+    retrieve_backup,
     retrieve_primary,
     validate_sources,
 }
@@ -127,6 +129,11 @@ def _handle_failure(
 ) {
     category = _failure_category(tool_result);
     msg = tool_result.get("error_message", "Tool failed.");
+    detail = str(msg);
+    if category == "INVALID_OUTPUT" and tool_result.get("ok") {
+        data = tool_result.get("data", {});
+        detail = json.dumps({"rejected": data, "repaired": None});
+    }
     update_step(
         run,
         step.index,
@@ -140,7 +147,7 @@ def _handle_failure(
         category,
         step.index,
         True,
-        str(msg),
+        detail,
     );
 }
 
@@ -280,6 +287,17 @@ def _advance_recovery(run: TaskRun) -> dict[str, any] {
         pick["requires_approval"],
     );
     if outcome["verification_status"] == "VERIFIED" {
+        if strategy == "REPAIR_OUTPUT" {
+            repaired = outcome["action_result"].get("data", {});
+            append_event(
+                run,
+                "REPAIR_DIFF",
+                "INVALID_OUTPUT",
+                failed.index,
+                True,
+                json.dumps({"rejected": None, "repaired": repaired}),
+            );
+        }
         _apply_verified_action(run, failed, strategy, outcome["action_result"]);
         return serialize_run(run);
     }
@@ -397,6 +415,76 @@ def pause_run_state(run: TaskRun) -> dict[str, any] {
     }
     run.status = RunStatus.PAUSED;
     append_event(run, "RUN_PAUSED", "", run.current_step, False, None);
+    return serialize_run(run);
+}
+
+def _backup_action_verified(action_result: dict[str, any]) -> bool {
+    if not action_result.get("ok") {
+        return False;
+    }
+    data = action_result.get("data", {});
+    records = data.get("records", []) if isinstance(data, dict) else [];
+    return isinstance(records, list) and len(records) > 0;
+}
+
+def human_decision_run_state(run: TaskRun, approved: bool) -> dict[str, any] {
+    if run.status != RunStatus.NEEDS_HUMAN {
+        return serialize_run(run);
+    }
+    failed = _failed_step(run);
+    if failed is None {
+        run.status = RunStatus.STOPPED;
+        return serialize_run(run);
+    }
+    recs = list_recoveries(run);
+    if not approved {
+        if len(recs) > 0 {
+            recs[len(recs) - 1].status = RecoveryStatus.FAILED;
+        }
+        append_event(
+            run,
+            "NEEDS_HUMAN",
+            "PERMISSION_DENIED",
+            failed.index,
+            True,
+            "Human denied; run stopped.",
+        );
+        run.status = RunStatus.STOPPED;
+        return serialize_run(run);
+    }
+    grant_human_override(run.run_id);
+    if len(recs) > 0 {
+        recs[len(recs) - 1].status = RecoveryStatus.RUNNING;
+    }
+    append_event(
+        run,
+        "RECOVERY_STARTED",
+        "HUMAN_APPROVAL",
+        failed.index,
+        True,
+        "Human approved; executing approved backup retrieve.",
+    );
+    action = retrieve_backup(run.run_id, run.scenario);
+    if _backup_action_verified(action) {
+        if len(recs) > 0 {
+            recs[len(recs) - 1].status = RecoveryStatus.VERIFIED;
+        }
+        append_event(run, "RECOVERY_VERIFIED", "FALLBACK_TOOL", failed.index, True, None);
+        records = action["data"].get("records", []);
+        summary = json.dumps({"records": records});
+        update_step(run, failed.index, StepStatus.COMPLETED, output_summary=summary);
+        append_event(run, "STEP_COMPLETED", "", failed.index, False, None);
+        commit_checkpoint(run, failed.index);
+        if failed.index < 4 {
+            run.current_step = failed.index + 1;
+        }
+        run.status = RunStatus.RUNNING;
+        return serialize_run(run);
+    }
+    if len(recs) > 0 {
+        recs[len(recs) - 1].status = RecoveryStatus.FAILED;
+    }
+    run.status = RunStatus.STOPPED;
     return serialize_run(run);
 }
 

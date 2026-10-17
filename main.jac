@@ -2,11 +2,14 @@
 
 import from api {
     advance_run,
+    get_fixture_sources,
     get_metrics,
     get_run,
     get_run_graph,
+    human_decision,
     list_runs,
     pause_run,
+    reset_demo,
     resume_run,
     start_run,
 }

@@ -66,12 +66,24 @@ def:pub Metrics(
                 <div className="metric-tile" key="failures-detected"><dt>Total failures</dt><dd>{_metric_value(metrics, "failures_detected")}</dd></div>
                 <div className="metric-tile" key="verified-recoveries"><dt>Successful recoveries</dt><dd>{_metric_value(metrics, "recoveries_verified")}</dd></div>
                 <div className="metric-tile" key="average-latency"><dt>Average recorded latency</dt><dd>{latency}</dd></div>
-                {has_baseline and <div className="metric-tile metric-comparison" key="baseline-comparison">
-                    <dt>Baseline / PHOENIX completions</dt>
-                    <dd>{baseline_completed} / {phoenix_completed}</dd>
-                </div>}
             </dl>
         }}
+        {has_baseline and has_test_runs and <div className="baseline-race" key="baseline-race">
+            <h3>Fixture benchmark (5 scenarios)</h3>
+            <div className="baseline-race-columns">
+                <div className="baseline-column">
+                    <p className="eyebrow">Baseline</p>
+                    <strong>{baseline_completed}</strong>
+                    <span>completed reports (stops on fault)</span>
+                </div>
+                <div className="baseline-column baseline-column-phoenix">
+                    <p className="eyebrow">PHOENIX</p>
+                    <strong>{phoenix_completed}</strong>
+                    <span>completed reports (bounded recovery)</span>
+                </div>
+            </div>
+            <p className="muted-copy">Counts from the fixture benchmark in recovery.jac, not production data.</p>
+        </div>}
         <p className="muted-copy">Metrics are returned from recorded runs only.</p>
         <button className="secondary-button metrics-refresh" type="button" disabled={loading} onClick={handle_refresh}>
             {loading and "Refreshing metrics..." or "Refresh metrics"}

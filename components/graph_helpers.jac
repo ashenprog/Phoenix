@@ -345,3 +345,177 @@ def report_empty_title(has_active_run: bool) -> str {
     }
     return "Your verified report will appear here.";
 }
+
+glob MAX_RETRIES_PER_STEP_UI: int = 2;
+glob MAX_RECOVERIES_PER_RUN_UI: int = 3;
+
+def policy_snapshot(state: dict[str, any]) -> dict[str, any] {
+    category = "";
+    strategy = "";
+    reason = "";
+    retries = 0;
+    recoveries = 0;
+    events = state.get("events", []);
+    if isinstance(events, list) {
+        for ev in events {
+            if not isinstance(ev, dict) {
+                continue;
+            }
+            if ev.get("type") == "FAILURE" {
+                category = str(ev.get("category", ""));
+            }
+            if ev.get("type") == "STRATEGY_SELECTED" {
+                strategy = str(ev.get("category", ""));
+                detail = ev.get("detail");
+                if detail is not None {
+                    reason = str(detail);
+                }
+            }
+        }
+    }
+    recs = state.get("recoveries", []);
+    if isinstance(recs, list) {
+        for rec in recs {
+            if not isinstance(rec, dict) {
+                continue;
+            }
+            recoveries += 1;
+            if rec.get("strategy") == "RETRY" {
+                retries += 1;
+            }
+            if len(str(rec.get("reason", ""))) > 0 and len(reason) == 0 {
+                reason = str(rec.get("reason", ""));
+            }
+            if len(str(rec.get("strategy", ""))) > 0 and len(strategy) == 0 {
+                strategy = str(rec.get("strategy", ""));
+            }
+        }
+    }
+    retries_left = MAX_RETRIES_PER_STEP_UI - retries;
+    if retries_left < 0 {
+        retries_left = 0;
+    }
+    recoveries_left = MAX_RECOVERIES_PER_RUN_UI - recoveries;
+    if recoveries_left < 0 {
+        recoveries_left = 0;
+    }
+    return {
+        "category": category,
+        "strategy": strategy,
+        "reason": reason,
+        "retries_used": retries,
+        "recoveries_used": recoveries,
+        "retries_left": retries_left,
+        "recoveries_left": recoveries_left,
+    };
+}
+
+def repair_diff_from_events(events: list[dict[str, any]]) -> dict[str, any] | None {
+    rejected: str | None = None;
+    repaired: str | None = None;
+    for ev in events {
+        et = str(ev.get("type", ""));
+        detail = ev.get("detail");
+        if detail is None {
+            continue;
+        }
+        text = str(detail);
+        if et == "FAILURE" and ev.get("category") == "INVALID_OUTPUT" {
+            rejected = text;
+        }
+        if et == "REPAIR_DIFF" {
+            repaired = text;
+        }
+    }
+    if rejected is None and repaired is None {
+        return None;
+    }
+    return {"rejected": rejected, "repaired": repaired};
+}
+
+def checkpoint_summary(state: dict[str, any]) -> str {
+    cp = state.get("checkpoint", {});
+    completed = -1;
+    if isinstance(cp, dict) {
+        completed = int(cp.get("completed_step", -1));
+    }
+    if completed < 0 {
+        return "No checkpoint committed yet.";
+    }
+    return (
+        "Checkpoint preserves completed steps through "
+        + str(completed + 1)
+        + ". Resume continues at the first incomplete step."
+    );
+}
+
+def step_durations_from_events(
+    events: list[dict[str, any]],
+) -> list[dict[str, any]] {
+    out: list[dict[str, any]] = [];
+    for idx in range(5) {
+        started = "";
+        completed = "";
+        for ev in events {
+            if not isinstance(ev, dict) {
+                continue;
+            }
+            if int(ev.get("step_index", -1)) != idx {
+                continue;
+            }
+            if ev.get("type") == "STEP_STARTED" {
+                ts = ev.get("timestamp");
+                if ts is not None {
+                    started = str(ts);
+                }
+            }
+            if ev.get("type") == "STEP_COMPLETED" {
+                ts = ev.get("timestamp");
+                if ts is not None {
+                    completed = str(ts);
+                }
+            }
+        }
+        label = "Step " + str(idx + 1);
+        if len(started) > 0 and len(completed) > 0 {
+            out.append(
+                {
+                    "step_index": idx,
+                    "label": label,
+                    "started": started,
+                    "completed": completed,
+                }
+            );
+        }
+    }
+    return out;
+}
+
+def graph_node_selected_class(base: str, selected: bool) -> str {
+    if selected {
+        return base + " graph-node-selected";
+    }
+    return base;
+}
+
+def fixture_for_id(
+    sources: list[dict[str, any]],
+    source_id: str,
+) -> dict[str, any] | None {
+    for src in sources {
+        if not isinstance(src, dict) {
+            continue;
+        }
+        if str(src.get("source_id", "")) == source_id {
+            return src;
+        }
+    }
+    return None;
+}
+
+def average_latency_label(ms: int | None) -> str {
+    if ms is None {
+        return "Average step time: not enough data yet.";
+    }
+    return "Average step time (recorded runs): " + str(ms) + " ms";
+}

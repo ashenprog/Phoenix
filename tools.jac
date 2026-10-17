@@ -5,6 +5,31 @@ import from pathlib { Path }
 import from models { Scenario }
 
 glob FAULT_LEDGER: dict[str, dict[str, int]] = {};
+glob HUMAN_OVERRIDE_GRANTED: dict[str, bool] = {};
+
+def grant_human_override(run_id: str) {
+    HUMAN_OVERRIDE_GRANTED[run_id] = True;
+}
+
+def clear_human_override(run_id: str) {
+    if run_id in HUMAN_OVERRIDE_GRANTED {
+        del HUMAN_OVERRIDE_GRANTED[run_id];
+    }
+}
+
+def clear_all_human_overrides() {
+    keys: list[str] = [];
+    for key in HUMAN_OVERRIDE_GRANTED {
+        keys.append(key);
+    }
+    for key in keys {
+        del HUMAN_OVERRIDE_GRANTED[key];
+    }
+}
+
+def _human_override_active(run_id: str) -> bool {
+    return bool(HUMAN_OVERRIDE_GRANTED.get(run_id, False));
+}
 
 def reset_fault_state(run_id: str) {
     if run_id in FAULT_LEDGER {
@@ -126,11 +151,26 @@ def retrieve_primary(run_id: str, scenario: Scenario) -> dict[str, any] {
     return _tool_ok({"records": records, "simulated": True}, tool, mode);
 }
 
+def list_fixture_sources() -> list[dict[str, any]] {
+    out: list[dict[str, any]] = [];
+    for src in _load_sources() {
+        out.append(
+            {
+                "source_id": src["source_id"],
+                "title": src["title"],
+                "tier": src.get("tier", "primary"),
+                "excerpt": src.get("excerpt", ""),
+                "url": src.get("url", ""),
+            }
+        );
+    }
+    return out;
+}
+
 def retrieve_backup(run_id: str, scenario: Scenario) -> dict[str, any] {
-    _ = run_id;
     tool = "retrieve_backup";
     mode = "BACKUP";
-    if scenario == Scenario.PERMISSION_DENIED {
+    if scenario == Scenario.PERMISSION_DENIED and not _human_override_active(run_id) {
         return _tool_err(
             "PERMISSION_DENIED",
             "Simulated permission denied on backup retrieve (fixture).",

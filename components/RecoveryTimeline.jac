@@ -40,7 +40,37 @@ def:pub RecoveryTimeline(
     events: list[dict[str, any]],
     recoveries: list[dict[str, any]],
     has_run: bool,
+    policy: dict[str, any] | None = None,
+    repair_diff: dict[str, any] | None = None,
 ) -> JsxElement {
+    has_policy = policy is not None and len(str(policy.get("strategy", ""))) > 0;
+    has_repair = repair_diff is not None;
+    policy_category = "—";
+    policy_strategy = "—";
+    policy_reason = "";
+    policy_retries_used = "0";
+    policy_retries_left = "0";
+    policy_recoveries_used = "0";
+    policy_recoveries_left = "0";
+    repair_rejected = "—";
+    repair_repaired = "—";
+    if policy is not None {
+        policy_category = str(policy.get("category", "—"));
+        policy_strategy = str(policy.get("strategy", "—"));
+        policy_reason = str(policy.get("reason", ""));
+        policy_retries_used = str(policy.get("retries_used", 0));
+        policy_retries_left = str(policy.get("retries_left", 0));
+        policy_recoveries_used = str(policy.get("recoveries_used", 0));
+        policy_recoveries_left = str(policy.get("recoveries_left", 0));
+    }
+    if repair_diff is not None {
+        if repair_diff.get("rejected") {
+            repair_rejected = str(repair_diff.get("rejected"));
+        }
+        if repair_diff.get("repaired") {
+            repair_repaired = str(repair_diff.get("repaired"));
+        }
+    }
     return <article className="panel timeline-panel">
         <div className="panel-heading">
             <div>
@@ -49,6 +79,30 @@ def:pub RecoveryTimeline(
             </div>
             <span className="event-count">{str(len(events))} events</span>
         </div>
+        {has_policy and <div className="policy-card" key="policy-card">
+            <h3>Recovery policy</h3>
+            <p><strong>Failure category:</strong> {policy_category}</p>
+            <p><strong>Selected strategy:</strong> {policy_strategy}</p>
+            <p>{policy_reason}</p>
+            <p className="policy-limits">
+                Retries used: {policy_retries_used} · left: {policy_retries_left}
+                {" · "}
+                Recoveries used: {policy_recoveries_used} · left: {policy_recoveries_left}
+            </p>
+        </div>}
+        {has_repair and <div className="repair-diff" key="repair-diff">
+            <h3>Invalid output repair</h3>
+            <div className="repair-columns">
+                <div>
+                    <p className="eyebrow">Rejected</p>
+                    <pre>{repair_rejected}</pre>
+                </div>
+                <div>
+                    <p className="eyebrow">Repaired</p>
+                    <pre>{repair_repaired}</pre>
+                </div>
+            </div>
+        </div>}
         {if len(events) == 0 {
             <div className="empty-state" key="timeline-empty">
                 <span className="empty-state-mark" aria-hidden="true">↳</span>

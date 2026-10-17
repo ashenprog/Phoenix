@@ -1,4 +1,4 @@
-import from engine { advance_run_state }
+import from engine { advance_run_state, human_decision_run_state }
 import from models {
     RecoveryStatus,
     RunStatus,
@@ -146,5 +146,27 @@ test "PERMISSION_DENIED stops for human approval" {
         }
     }
     assert has_human;
+    delete_run(run);
+}
+
+test "PERMISSION_DENIED human approve uses backup and continues" {
+    run = create_run("permission approve", Scenario.PERMISSION_DENIED);
+    advance_run_state(run);
+    advance_run_state(run);
+    human = advance_run_state(run);
+    assert human["status"] == RunStatus.NEEDS_HUMAN;
+    approved = human_decision_run_state(run, True);
+    assert approved["status"] == RunStatus.RUNNING;
+    assert approved["steps"][1]["status"] == StepStatus.COMPLETED;
+    delete_run(run);
+}
+
+test "PERMISSION_DENIED human deny stops run" {
+    run = create_run("permission deny", Scenario.PERMISSION_DENIED);
+    advance_run_state(run);
+    advance_run_state(run);
+    advance_run_state(run);
+    denied = human_decision_run_state(run, False);
+    assert denied["status"] == RunStatus.STOPPED;
     delete_run(run);
 }

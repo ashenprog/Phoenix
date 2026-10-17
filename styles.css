@@ -629,3 +629,73 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visi
 .graph-detail-line, .graph-detail-copy p { margin: 6px 0 0; font-size: 12px; }
 .recovery-state-verified strong { color: #86efac; }
 .recovery-state-failed strong, .recovery-state-exhausted strong { color: #fecaca; }
+
+.policy-card, .repair-diff, .checkpoint-viewer, .human-gate, .run-history-panel, .source-drawer {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #11192b;
+}
+.policy-card h3, .repair-diff h3 { margin: 0 0 8px; font-size: 13px; }
+.policy-limits { color: var(--muted); font-size: 11px; }
+.repair-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.repair-columns pre {
+    margin: 0;
+    padding: 8px;
+    overflow: auto;
+    font-size: 10px;
+    border-radius: 6px;
+    background: #0b1020;
+}
+.baseline-race { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.baseline-race-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.baseline-column {
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: grid;
+    gap: 4px;
+}
+.baseline-column-phoenix { border-color: var(--accent); }
+.run-history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.run-history-item {
+    width: 100%;
+    text-align: left;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    display: grid;
+    gap: 4px;
+}
+.run-history-item span { color: var(--muted); font-size: 11px; }
+.source-id-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.source-id-button {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: #11192b;
+    color: #fdba74;
+    cursor: pointer;
+}
+.step-timing-list { margin: 8px 0 0; padding-left: 18px; font-size: 11px; color: var(--muted); }
+.presenter-mode { font-size: 1.08rem; }
+.presenter-mode .welcome-row h1 { font-size: 2.4rem; }
+.presenter-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    padding: 16px;
+    margin-bottom: 16px;
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    background: #1a1208;
+    font-size: 1.25rem;
+}
+.presenter-hint { color: var(--muted); font-size: 0.85rem; }
+.presenter-toggle { font-size: 11px; }
+.human-gate { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
